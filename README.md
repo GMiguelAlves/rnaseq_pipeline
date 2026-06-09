@@ -1,4 +1,4 @@
-# Generic RNA-seq Pipeline for Slurm or Local Runs
+# RNA-seq Pipeline
 
 This repository contains a modular RNA-seq pipeline designed for reproducible
 analysis on Slurm/HPC systems or on a local workstation. It is organism
