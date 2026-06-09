@@ -1,7 +1,7 @@
 
 # Ignore big data
-*.csv
-*.tsv
+#*.csv
+#*.tsv
 *.fastq.gz
 *.fq.gz
 *.bam
