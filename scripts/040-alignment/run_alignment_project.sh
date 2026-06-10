@@ -36,8 +36,21 @@ QC_PLAN=$2
 shift 2
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="${PROJECT_DIR:-$(cd "${SCRIPT_DIR}/../.." && pwd)}"
-source "${PROJECT_DIR}/config/pipeline_config.sh"
+if [[ -n "${PIPELINE_CONFIG:-}" && -f "$PIPELINE_CONFIG" ]]; then
+    source "$PIPELINE_CONFIG"
+elif [[ -n "${PROJECT_DIR:-}" && -f "${PROJECT_DIR}/config/pipeline_config.sh" ]]; then
+    source "${PROJECT_DIR}/config/pipeline_config.sh"
+elif [[ -n "${SLURM_SUBMIT_DIR:-}" && -f "${SLURM_SUBMIT_DIR}/config/pipeline_config.sh" ]]; then
+    PROJECT_DIR="$(cd "$SLURM_SUBMIT_DIR" && pwd)"
+    source "${PROJECT_DIR}/config/pipeline_config.sh"
+elif [[ -n "${SLURM_SUBMIT_DIR:-}" && -f "${SLURM_SUBMIT_DIR}/../config/pipeline_config.sh" ]]; then
+    PROJECT_DIR="$(cd "${SLURM_SUBMIT_DIR}/.." && pwd)"
+    source "${PROJECT_DIR}/config/pipeline_config.sh"
+else
+    PROJECT_DIR="${PROJECT_DIR:-$(cd "${SCRIPT_DIR}/../.." && pwd)}"
+    source "${PROJECT_DIR}/config/pipeline_config.sh"
+fi
+SCRIPT_DIR="$ALIGN_SCRIPTS_DIR"
 STEP_DIR="$ALIGN_DIR"
 mkdir -p "$STEP_DIR"
 cd "$STEP_DIR"
