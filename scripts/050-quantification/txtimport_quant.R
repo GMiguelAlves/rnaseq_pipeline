@@ -74,7 +74,7 @@ if (nrow(sample_meta) == 0) {
 sample_meta <- sample_meta %>%
   arrange(dataset, sample_id) %>%
   mutate(
-    import_id = ifelse(project == "", paste(dataset, sample_id, sep = "__"), sample_id),
+    import_id = if (project == "") paste(dataset, sample_id, sep = "__") else sample_id,
     quant_file = file.path(quant_root, dataset, sample_id, "quant.sf"),
     quant_exists = file.exists(quant_file)
   )
