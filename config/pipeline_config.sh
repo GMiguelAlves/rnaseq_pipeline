@@ -23,7 +23,7 @@ fi
 # ---------------------------------------------------------------------------
 # Simple user settings
 # ---------------------------------------------------------------------------
-# This optional file is the only file non-bioinformatics users should edit.
+# This optional file is the only file users should edit.
 # Values in user_settings.sh override the advanced defaults below.
 export USER_SETTINGS_FILE="${USER_SETTINGS_FILE:-${PROJECT_DIR}/config/user_settings.sh}"
 if [[ -f "$USER_SETTINGS_FILE" ]]; then
