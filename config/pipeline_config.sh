@@ -1,3 +1,4 @@
+
 #!/usr/bin/env bash
 
 # Central configuration engine for the RNA-seq pipeline.
@@ -20,15 +21,65 @@ else
     export PROJECT_DIR="${PROJECT_DIR:-$(pwd)}"
 fi
 
+path_is_absolute() {
+    local path="$1"
+    [[ "$path" == /* || "$path" =~ ^[A-Za-z]:[\\/].* ]]
+}
+
+resolve_path_from_dir() {
+    local base_dir="$1"
+    local path="$2"
+    local parent name
+
+    [[ -n "$path" ]] || return 0
+    case "$path" in
+        "~")
+            printf '%s\n' "$HOME"
+            return 0
+            ;;
+        "~/"*)
+            printf '%s/%s\n' "$HOME" "${path#~/}"
+            return 0
+            ;;
+    esac
+    if path_is_absolute "$path"; then
+        printf '%s\n' "$path"
+        return 0
+    fi
+
+    parent="${path%/*}"
+    name="${path##*/}"
+    [[ "$parent" != "$path" ]] || parent="."
+    if [[ -d "${base_dir}/${parent}" ]]; then
+        printf '%s/%s\n' "$(cd "${base_dir}/${parent}" && pwd)" "$name"
+    else
+        printf '%s/%s\n' "$base_dir" "$path"
+    fi
+}
+
+normalize_project_path_var() {
+    local var_name="$1"
+    local value="${!var_name:-}"
+    [[ -n "$value" ]] || return 0
+    export "${var_name}=$(resolve_path_from_dir "$PROJECT_DIR" "$value")"
+}
+
 # ---------------------------------------------------------------------------
 # Simple user settings
 # ---------------------------------------------------------------------------
-# This optional file is the only file users should edit.
+# This optional file is the only file non-bioinformatics users should edit.
 # Values in user_settings.sh override the advanced defaults below.
 export USER_SETTINGS_FILE="${USER_SETTINGS_FILE:-${PROJECT_DIR}/config/user_settings.sh}"
+if ! path_is_absolute "$USER_SETTINGS_FILE"; then
+    export USER_SETTINGS_FILE="${PROJECT_DIR}/${USER_SETTINGS_FILE}"
+fi
+export USER_SETTINGS_DIR="$(cd "$(dirname "$USER_SETTINGS_FILE")" 2>/dev/null && pwd || echo "${PROJECT_DIR}/config")"
 if [[ -f "$USER_SETTINGS_FILE" ]]; then
     # shellcheck disable=SC1090
     source "$USER_SETTINGS_FILE"
+fi
+if [[ -n "${CONDA_BASE:-}" ]]; then
+    export CONDA_BASE="$(resolve_path_from_dir "$USER_SETTINGS_DIR" "$CONDA_BASE")"
 fi
 
 # ---------------------------------------------------------------------------
@@ -94,6 +145,11 @@ export QUANT_METHOD="${QUANT_METHOD:-salmon}"
 export QUANT_METHOD="${QUANT_METHOD,,}"
 export STAR_QUANT_DIR="${STAR_QUANT_DIR:-${ALIGN_DIR}/star_quant}"
 
+for output_path_var in QUANT_DIR STAR_QUANT_DIR QUANTIFICATION_DIR; do
+    normalize_project_path_var "$output_path_var"
+done
+unset output_path_var
+
 # ---------------------------------------------------------------------------
 # Reference inputs
 # ---------------------------------------------------------------------------
@@ -154,13 +210,31 @@ export STAR_GENECOUNT_COLUMN="${STAR_GENECOUNT_COLUMN,,}"
 export STAR_READ_FILES_COMMAND="${STAR_READ_FILES_COMMAND:-zcat}"
 export STAR_EXTRA_ARGS="${STAR_EXTRA_ARGS:-}"
 
+export QUANT_COUNTS_MATRIX_NAME="${QUANT_COUNTS_MATRIX_NAME:-counts_matrix.tsv}"
+export SALMON_TPM_MATRIX_NAME="${SALMON_TPM_MATRIX_NAME:-tpm_matrix.tsv}"
+export STAR_CPM_MATRIX_NAME="${STAR_CPM_MATRIX_NAME:-star_cpm_matrix.tsv}"
+export QUANT_SAMPLES_NAME="${QUANT_SAMPLES_NAME:-quant_samples.tsv}"
+export TX2GENE_NAME="${TX2GENE_NAME:-tx2gene.tsv}"
+
+export QUANT_COUNTS_MATRIX_FILE="${QUANT_COUNTS_MATRIX_FILE:-${QUANTIFICATION_DIR}/${QUANT_COUNTS_MATRIX_NAME}}"
+export SALMON_TPM_MATRIX_FILE="${SALMON_TPM_MATRIX_FILE:-${QUANTIFICATION_DIR}/${SALMON_TPM_MATRIX_NAME}}"
+export STAR_CPM_MATRIX_FILE="${STAR_CPM_MATRIX_FILE:-${QUANTIFICATION_DIR}/${STAR_CPM_MATRIX_NAME}}"
+export QUANT_SAMPLES_FILE="${QUANT_SAMPLES_FILE:-${QUANTIFICATION_DIR}/${QUANT_SAMPLES_NAME}}"
+export TX2GENE_FILE="${TX2GENE_FILE:-${QUANTIFICATION_DIR}/${TX2GENE_NAME}}"
+
+for output_path_var in QUANT_COUNTS_MATRIX_FILE SALMON_TPM_MATRIX_FILE STAR_CPM_MATRIX_FILE QUANT_SAMPLES_FILE TX2GENE_FILE; do
+    normalize_project_path_var "$output_path_var"
+done
+unset output_path_var
+
 if [[ "${QUANT_METHOD}" == "star" ]]; then
-    export EXPRESSION_MATRIX_FILE="${EXPRESSION_MATRIX_FILE:-${QUANTIFICATION_DIR}/star_cpm_matrix.tsv}"
+    export EXPRESSION_MATRIX_FILE="${EXPRESSION_MATRIX_FILE:-${STAR_CPM_MATRIX_FILE}}"
     export EXPRESSION_UNIT="${EXPRESSION_UNIT:-CPM}"
 else
-    export EXPRESSION_MATRIX_FILE="${EXPRESSION_MATRIX_FILE:-${QUANTIFICATION_DIR}/tpm_matrix.tsv}"
+    export EXPRESSION_MATRIX_FILE="${EXPRESSION_MATRIX_FILE:-${SALMON_TPM_MATRIX_FILE}}"
     export EXPRESSION_UNIT="${EXPRESSION_UNIT:-TPM}"
 fi
+normalize_project_path_var EXPRESSION_MATRIX_FILE
 
 # ---------------------------------------------------------------------------
 # Resources and pipeline defaults
@@ -186,6 +260,57 @@ fi
 export RUN_BATCH_CORRECTION="${RUN_BATCH_CORRECTION:-0}"
 export RUN_GENE_REPORT="${RUN_GENE_REPORT:-0}"
 export PIPELINE_WAIT_FOR_CHILD_JOBS="${PIPELINE_WAIT_FOR_CHILD_JOBS:-1}"
+
+# Storage policy for large generated intermediates.
+#
+# full: keep every generated file, best for debugging/restarts.
+# balanced: after step 040 succeeds, keep raw FASTQs, merged trimmed FASTQs,
+#           MultiQC summary and quantification outputs; remove per-run trimmed
+#           FASTQs and individual FastQC directories.
+# minimal: after step 040 succeeds, keep only summaries and downstream
+#          quantification/results; remove raw FASTQs, trimmed FASTQs and STAR
+#          BAM files. Rerunning QC/alignment will require downloading/processing
+#          again.
+export PIPELINE_STORAGE_MODE="${PIPELINE_STORAGE_MODE:-full}"
+export PIPELINE_STORAGE_MODE="${PIPELINE_STORAGE_MODE,,}"
+case "$PIPELINE_STORAGE_MODE" in
+    full)
+        default_run_storage_cleanup=0
+        default_cleanup_fastqc_dirs=0
+        default_cleanup_trimmed_runs=0
+        default_cleanup_trimmed_merged=0
+        default_cleanup_fastq_ftp=0
+        default_cleanup_star_bam=0
+        ;;
+    balanced)
+        default_run_storage_cleanup=1
+        default_cleanup_fastqc_dirs=1
+        default_cleanup_trimmed_runs=1
+        default_cleanup_trimmed_merged=0
+        default_cleanup_fastq_ftp=0
+        default_cleanup_star_bam=0
+        ;;
+    minimal)
+        default_run_storage_cleanup=1
+        default_cleanup_fastqc_dirs=1
+        default_cleanup_trimmed_runs=1
+        default_cleanup_trimmed_merged=1
+        default_cleanup_fastq_ftp=1
+        default_cleanup_star_bam=1
+        ;;
+    *)
+        echo "[ERRO] PIPELINE_STORAGE_MODE invalido: ${PIPELINE_STORAGE_MODE}. Use full, balanced ou minimal." >&2
+        exit 1
+        ;;
+esac
+export RUN_STORAGE_CLEANUP_AFTER_ALIGNMENT="${RUN_STORAGE_CLEANUP_AFTER_ALIGNMENT:-$default_run_storage_cleanup}"
+export CLEANUP_FASTQC_DIRS="${CLEANUP_FASTQC_DIRS:-$default_cleanup_fastqc_dirs}"
+export CLEANUP_TRIMMED_RUNS="${CLEANUP_TRIMMED_RUNS:-$default_cleanup_trimmed_runs}"
+export CLEANUP_TRIMMED_MERGED="${CLEANUP_TRIMMED_MERGED:-$default_cleanup_trimmed_merged}"
+export CLEANUP_FASTQ_FTP="${CLEANUP_FASTQ_FTP:-$default_cleanup_fastq_ftp}"
+export CLEANUP_STAR_BAM="${CLEANUP_STAR_BAM:-$default_cleanup_star_bam}"
+unset default_run_storage_cleanup default_cleanup_fastqc_dirs default_cleanup_trimmed_runs
+unset default_cleanup_trimmed_merged default_cleanup_fastq_ftp default_cleanup_star_bam
 
 export FASTQ_LAYOUT="${FASTQ_LAYOUT:-paired}"
 export TRIM_QUALITY="${TRIM_QUALITY:-20}"
@@ -242,7 +367,9 @@ metadata_default() {
 activate_conda_env() {
     local env_name="$1"
     if [[ -z "${CONDA_BASE:-}" || ! -f "${CONDA_BASE}/etc/profile.d/conda.sh" ]]; then
-        echo "[ERRO] Conda nao encontrado. Ajuste CONDA_BASE em config/pipeline_config.sh." >&2
+        echo "[ERRO] Conda nao encontrado em CONDA_BASE='${CONDA_BASE:-}'." >&2
+        echo "[ERRO] Ajuste CONDA_BASE em ${USER_SETTINGS_FILE:-config/user_settings.sh}." >&2
+        echo "[ERRO] Caminhos relativos sao interpretados a partir de ${USER_SETTINGS_DIR:-config}." >&2
         exit 1
     fi
     # shellcheck disable=SC1090

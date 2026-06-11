@@ -1018,37 +1018,36 @@ table_to_html <- function(df, max_rows = 30) {
   paste0("<div class='table-wrap'><table>", header, paste(rows, collapse = "\n"), "</table></div>")
 }
 
-figure_explanation <- function(caption) {
-  caption_l <- tolower(caption)
-  dplyr::case_when(
-    grepl("pca", caption_l) ~ "Agrupa amostras por similaridade global de expressao nos genes exibidos. Separacoes fortes podem indicar efeito biologico, batch ou amostras discrepantes.",
-    grepl("mds", caption_l) ~ "Resume distancias entre amostras; pontos proximos tem perfis de expressao parecidos para este conjunto de genes.",
-    grepl("correlacao", caption_l) ~ "Mostra se genes variam juntos entre as amostras. Valores altos sugerem perfis coordenados ou dependencia de um mesmo contexto.",
-    grepl("dotplot|fracao expressa", caption_l) ~ "Combina intensidade media de expressao com a proporcao de amostras expressas, ajudando a separar genes altos em poucas amostras de genes consistentes.",
-    grepl("heatmap gene x amostra|amostra", caption_l) ~ "Mostra expressao por amostra individual. Use para procurar outliers, padroes por projeto e consistencia entre replicatas.",
-    grepl("heatmap|expressao media", caption_l) ~ paste0("Resume log2(", expression_unit, " + 1) medio por contexto. Cores mais intensas indicam maior expressao relativa naquele contexto."),
-    grepl("ovario|testiculo", caption_l) ~ "Compara contextos reprodutivos quando a metadata contem esses tecidos; e ignorado quando os dados nao permitem a comparacao.",
-    grepl("batch|projeto", caption_l) ~ "Ajuda a avaliar se o sinal de expressao acompanha projeto/batch em vez de contexto biologico.",
-    grepl("log2fc|deg|contraste", caption_l) ~ "Resume resultados diferenciais. log2FC positivo/negativo indica direcao do efeito; padj baixo aumenta a confianca estatistica.",
-    grepl("perfil agregado|perfil medio", caption_l) ~ "Mostra tendencias medias ao longo de estagios ou contextos, suavizando variacao gene a gene.",
-    TRUE ~ "Figura exploratoria para revisar padroes de expressao, consistencia entre amostras e possiveis efeitos tecnicos."
-  )
-}
-
 img_tag <- function(src, caption) {
   if (!file.exists(file.path(out_dir, src))) return("")
-  explanation <- figure_explanation(caption)
-  search_text <- paste(caption, explanation, src)
+  search_text <- paste(caption, src)
   paste0(
     "<figure class='searchable report-figure' data-kind='figure' data-search='", html_escape(tolower(search_text)), "'>",
     "<img src='", gsub("\\\\", "/", src), "' alt='", html_escape(caption), "'>",
-    "<figcaption><strong>", html_escape(caption), "</strong><span>", html_escape(explanation), "</span></figcaption>",
+    "<figcaption><strong>", html_escape(caption), "</strong></figcaption>",
     "</figure>"
   )
 }
 
 write_html_report <- function(path, title, catalog, gene_summary, deg_hits, global_plots, expression_unit = "TPM") {
   if (is.na(expression_unit) || expression_unit == "") expression_unit <- "TPM"
+  n_found_genes <- catalog %>%
+    dplyr::filter(found_in_expression_matrix %in% TRUE) %>%
+    dplyr::distinct(matched_gene_id) %>%
+    nrow()
+  n_annotated_genes <- catalog %>%
+    dplyr::filter(location != "" | biotype != "Unknown" | description != "") %>%
+    dplyr::distinct(matched_gene_id) %>%
+    nrow()
+  n_deg_sig_genes <- if (nrow(deg_hits) > 0) {
+    deg_hits %>%
+      dplyr::filter(significant %in% TRUE) %>%
+      dplyr::distinct(gene_id) %>%
+      nrow()
+  } else {
+    0
+  }
+  generated_at <- format(Sys.time(), "%Y-%m-%d %H:%M")
 
   group_links <- paste(vapply(unique(catalog$group), function(grp) {
     paste0("<li><a href='#group_", sanitize(grp), "'>", html_escape(grp), "</a></li>")
@@ -1132,6 +1131,7 @@ write_html_report <- function(path, title, catalog, gene_summary, deg_hits, glob
       .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;margin:18px 0}
       .card{background:#f7f9fb;border:1px solid #dde5ed;border-radius:6px;padding:14px}
       .card .num{font-size:28px;font-weight:700;color:#17324d}
+      .card .num.text{font-size:18px;line-height:1.2;overflow-wrap:anywhere}
       .toolbar{position:sticky;top:46px;background:#fff;border:1px solid #d8e1ea;border-radius:6px;padding:12px;margin:14px 0 24px 0;z-index:2;box-shadow:0 2px 10px rgba(20,45,70,.06)}
       .toolbar input{box-sizing:border-box;width:100%;font-size:16px;padding:10px 12px;border:1px solid #bdc9d6;border-radius:4px}
       .filters{display:flex;flex-wrap:wrap;gap:14px;margin-top:10px;font-size:13px;color:#34495e}
@@ -1140,8 +1140,6 @@ write_html_report <- function(path, title, catalog, gene_summary, deg_hits, glob
       .gene-index{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:8px;margin:14px 0 24px 0}
       .gene-chip{display:block;border:1px solid #d8e1ea;border-radius:6px;padding:9px 10px;text-decoration:none;color:#17324d;background:#fbfcfd}
       .gene-chip span{display:block;font-weight:700;overflow-wrap:anywhere}.gene-chip small{display:block;color:#697b8c;margin-top:2px}
-      .guide{background:#fbfcfd;border:1px solid #d8e1ea;border-radius:6px;padding:14px;margin:18px 0}
-      .guide h2{border:0;margin-top:0;padding-top:0}.guide dl{display:grid;grid-template-columns:minmax(150px,240px) 1fr;gap:8px 16px;margin:0}.guide dt{font-weight:700;color:#17324d}.guide dd{margin:0}
       .table-wrap{overflow-x:auto}
       table{border-collapse:collapse;width:100%;font-size:12px;margin:10px 0 22px 0}
       th,td{border:1px solid #ddd;padding:5px;vertical-align:top} th{background:#f3f3f3}
@@ -1190,7 +1188,7 @@ write_html_report <- function(path, title, catalog, gene_summary, deg_hits, glob
     </script>",
     "</head><body>",
     paste0("<h1>", html_escape(title), "</h1>"),
-    "<nav><a href='#overview'>Visao geral</a><a href='#guide'>Como ler</a><a href='#groups'>Grupos</a><a href='#genes'>Genes</a><a href='#tables'>Tabelas</a></nav>",
+    "<nav><a href='#overview'>Resumo</a><a href='#groups'>Grupos</a><a href='#genes'>Genes</a><a href='#tables'>Tabelas</a></nav>",
     "<div class='toolbar' role='search'>",
     "<input id='geneSearch' type='search' placeholder='Buscar por gene, ID, grupo, biotipo, descricao ou contraste'>",
     "<div class='filters'>",
@@ -1203,12 +1201,14 @@ write_html_report <- function(path, title, catalog, gene_summary, deg_hits, glob
     "</div>",
     "<section id='overview'>",
     "<div class='cards'>",
+    paste0("<div class='card'><div class='num text'>", html_escape(expression_unit), "</div><div>matriz de expressao</div></div>"),
     paste0("<div class='card'><div class='num'>", nrow(catalog), "</div><div>entradas no genes.txt</div></div>"),
-    paste0("<div class='card'><div class='num'>", length(unique(catalog$matched_gene_id)), "</div><div>genes unicos</div></div>"),
+    paste0("<div class='card'><div class='num'>", n_found_genes, "</div><div>genes encontrados</div></div>"),
+    paste0("<div class='card'><div class='num'>", n_annotated_genes, "</div><div>genes anotados</div></div>"),
     paste0("<div class='card'><div class='num'>", length(unique(catalog$group)), "</div><div>grupos</div></div>"),
-    paste0("<div class='card'><div class='num'>", length(unique(deg_hits$contrast_label)), "</div><div>contrastes DEG com estes genes</div></div>"),
+    paste0("<div class='card'><div class='num'>", n_deg_sig_genes, "</div><div>genes com DEG significativo</div></div>"),
+    paste0("<div class='card'><div class='num text'>", html_escape(generated_at), "</div><div>gerado em</div></div>"),
     "</div>",
-    paste0("<p>Este relatorio nao classifica genes. Ele organiza evidencias visuais e tabelas para explorar expressao em ", html_escape(expression_unit), ", localizacao genomica, batch/projeto, contexto biologico e resultados DEG de cada gene e grupo.</p>"),
     "<div class='gene-index'>", gene_index, "</div>",
     img_tag(global_plots$heatmap, "Expressao media integrada por contexto"),
     img_tag(global_plots$dotplot, "Expressao media e fracao expressa"),
@@ -1224,14 +1224,6 @@ write_html_report <- function(path, title, catalog, gene_summary, deg_hits, glob
     img_tag(global_plots$deg_tile, "Sinais DEG por contraste/projeto"),
     img_tag(global_plots$deg_direction, "Direcao DEG por contraste/projeto"),
     "</section>",
-    "<section class='guide' id='guide'><h2>Como ler as visualizacoes</h2>",
-    "<dl>",
-    paste0("<dt>", html_escape(expression_unit), " e log2(", html_escape(expression_unit), " + 1)</dt><dd>A matriz de expressao normalizada e usada para comparar padroes entre amostras; a escala log reduz o peso de genes muito altos.</dd>"),
-    "<dt>Heatmaps</dt><dd>Use para localizar blocos de alta/baixa expressao e checar se grupos biologicos ou projetos dominam o sinal.</dd>",
-    "<dt>PCA/MDS</dt><dd>Servem como controle exploratorio: separacoes por batch/projeto merecem cautela antes de interpretar diferencas biologicas.</dd>",
-    "<dt>DEG</dt><dd>log2FC mostra direcao e tamanho do efeito; padj considera multiplos testes. Priorize genes com efeito coerente e padj baixo.</dd>",
-    "<dt>Busca</dt><dd>Digite ID, nome, grupo, biotipo, descricao ou contraste para reduzir o relatorio aos itens relevantes.</dd>",
-    "</dl></section>",
     "<section id='groups'><h2>Grupos</h2><ul>", group_links, "</ul>", group_sections, "</section>",
     "<section id='genes'><h2>Genes individuais</h2>", gene_sections, "</section>",
     "<section id='tables'><h2>Tabelas</h2>",
