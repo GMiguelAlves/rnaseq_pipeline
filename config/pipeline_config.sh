@@ -1,4 +1,3 @@
-
 #!/usr/bin/env bash
 
 # Central configuration engine for the RNA-seq pipeline.

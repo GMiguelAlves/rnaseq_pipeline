@@ -94,6 +94,31 @@ case "${PIPELINE_EXECUTOR:-slurm}" in
     ;;
 esac
 
+case "${PIPELINE_STORAGE_MODE:-full}" in
+  full|balanced|minimal)
+    ;;
+  *)
+    die "PIPELINE_STORAGE_MODE must be 'full', 'balanced', or 'minimal'. Current value: ${PIPELINE_STORAGE_MODE}"
+    ;;
+esac
+
+for flag in \
+  RUN_STORAGE_CLEANUP_AFTER_ALIGNMENT \
+  CLEANUP_FASTQC_DIRS \
+  CLEANUP_TRIMMED_RUNS \
+  CLEANUP_TRIMMED_MERGED \
+  CLEANUP_FASTQ_FTP \
+  CLEANUP_STAR_BAM
+do
+  case "${!flag:-0}" in
+    0|1|true|TRUE|yes|YES|false|FALSE|no|NO|y|Y|n|N)
+      ;;
+    *)
+      die "${flag} must be 0/1 or yes/no. Current value: ${!flag}"
+      ;;
+  esac
+done
+
 while read -r project; do
   [[ -n "${project}" ]] || continue
   if [[ ! -f "${DATASET_CONFIG_DIR}/${project}/config.yaml" ]]; then

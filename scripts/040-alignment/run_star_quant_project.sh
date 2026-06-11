@@ -113,7 +113,7 @@ if [ -z "$PLAN" ]; then
     PLAN="work/${PROJECT}_star_plan.csv"
 fi
 
-mkdir -p work logs/star
+mkdir -p work logs/star logs/cleanup
 
 run_cmd() {
     echo "+ $*"
@@ -132,6 +132,17 @@ submit_job() {
     output=$("$@")
     echo "$output" >&2
     echo "$output" | tail -n 1 | cut -d';' -f1
+}
+
+truthy() {
+    case "${1:-0}" in
+        1|true|TRUE|yes|YES|y|Y)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
 }
 
 echo "[INFO] Projeto: $PROJECT"
@@ -160,9 +171,15 @@ if [ "$DRY_RUN" -eq 1 ]; then
     if [ "$EXECUTOR" = "local" ]; then
         echo "[DRY-RUN] Exemplo de execucao local:"
         echo "  SLURM_ARRAY_TASK_ID=1 bash ${SCRIPT_DIR}/star_quant_plan.sh $PLAN $INDEX_DIR"
+        if truthy "${RUN_STORAGE_CLEANUP_AFTER_ALIGNMENT:-0}"; then
+            echo "  bash ${SCRIPT_DIR}/cleanup_project_storage.sh $PROJECT --scratch-root $SCRATCH_ROOT"
+        fi
     else
         echo "[DRY-RUN] Exemplo de submissao:"
         echo "  sbatch --parsable --array=1-SAMPLES%${CONCURRENCY} ${SCRIPT_DIR}/star_quant_plan.sh $PLAN $INDEX_DIR"
+        if truthy "${RUN_STORAGE_CLEANUP_AFTER_ALIGNMENT:-0}"; then
+            echo "  sbatch --parsable --dependency=afterok:<star_job> ${SCRIPT_DIR}/cleanup_project_storage.sh $PROJECT --scratch-root $SCRATCH_ROOT"
+        fi
     fi
     exit 0
 fi
@@ -181,6 +198,9 @@ echo "[INFO] Amostras para STAR: $SAMPLES"
 if [ "$EXECUTOR" = "local" ]; then
     echo "[INFO] Rodando STAR localmente em ordem sequencial."
     run_local_array "STAR quant" "$SAMPLES" "${SCRIPT_DIR}/star_quant_plan.sh" "$PLAN" "$INDEX_DIR"
+    if truthy "${RUN_STORAGE_CLEANUP_AFTER_ALIGNMENT:-0}"; then
+        bash "${SCRIPT_DIR}/cleanup_project_storage.sh" "$PROJECT" --scratch-root "$SCRATCH_ROOT"
+    fi
     echo "[OK] Etapa 040 STAR concluida localmente."
     exit 0
 fi
@@ -194,7 +214,22 @@ STAR_JOB=$(
 
 echo "[OK] Job STAR submetido: $STAR_JOB"
 
+CLEANUP_JOB=""
+if truthy "${RUN_STORAGE_CLEANUP_AFTER_ALIGNMENT:-0}"; then
+    CLEANUP_JOB=$(
+        submit_job sbatch --parsable \
+            --export="ALL,PROJECT_DIR=${PROJECT_DIR},PIPELINE_CONFIG=${PROJECT_DIR}/config/pipeline_config.sh,PIPELINE_EXECUTOR=${EXECUTOR}" \
+            --dependency="afterok:${STAR_JOB}" \
+            "${SCRIPT_DIR}/cleanup_project_storage.sh" "$PROJECT" --scratch-root "$SCRATCH_ROOT"
+    )
+    echo "[OK] Job cleanup submetido: $CLEANUP_JOB"
+fi
+
 if [ -n "${SLURM_JOB_ID:-}" ]; then
     echo "[INFO] Aguardando job STAR para liberar dependencias downstream."
     wait_for_slurm_jobs "$STAR_JOB"
+    if [ -n "$CLEANUP_JOB" ]; then
+        echo "[INFO] Aguardando limpeza de armazenamento."
+        wait_for_slurm_jobs "$CLEANUP_JOB"
+    fi
 fi
