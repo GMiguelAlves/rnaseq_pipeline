@@ -46,11 +46,11 @@ usage() {
     echo "  --quant-root PATH        Default: QUANT_DIR (salmon) ou STAR_QUANT_DIR (star)"
     echo "  --gtf PATH               Default: REF_GTF; usado somente para Salmon/tximport"
     echo "  --output-dir PATH        Default: QUANTIFICATION_DIR do config/pipeline_config.sh"
-    echo "  --counts-name NAME       Nome do arquivo de counts"
-    echo "  --tpm-name NAME          Nome da matriz de expressao (TPM no Salmon; CPM no STAR)"
+    echo "  --counts-name NAME       Default: QUANT_COUNTS_MATRIX_NAME"
+    echo "  --tpm-name NAME          Default: SALMON_TPM_MATRIX_NAME ou STAR_CPM_MATRIX_NAME"
     echo "  --expression-name NAME   Alias de --tpm-name para STAR/relatorios genericos"
-    echo "  --sample-table-name NAME Nome da tabela de amostras importadas"
-    echo "  --tx2gene-out PATH       Default: <output-dir>/tx2gene.tsv"
+    echo "  --sample-table-name NAME Default: QUANT_SAMPLES_NAME"
+    echo "  --tx2gene-out PATH       Default: TX2GENE_FILE"
     echo "  --star-count-column NAME unstranded, stranded_forward ou stranded_reverse"
     echo "  --allow-missing          Importa somente arquivos de quantificacao existentes"
     echo "  --dry-run                Mostra o comando sem executar"
@@ -157,6 +157,26 @@ if [ -z "$QUANT_ROOT" ]; then
     fi
 fi
 
+if [ -z "$COUNTS_NAME" ] && [ -z "$PROJECT" ]; then
+    COUNTS_NAME="$QUANT_COUNTS_MATRIX_NAME"
+fi
+
+if [ -z "$TPM_NAME" ] && [ -z "$PROJECT" ]; then
+    if [ "$METHOD" = "star" ]; then
+        TPM_NAME="$STAR_CPM_MATRIX_NAME"
+    else
+        TPM_NAME="$SALMON_TPM_MATRIX_NAME"
+    fi
+fi
+
+if [ -z "$SAMPLE_TABLE_NAME" ] && [ -z "$PROJECT" ]; then
+    SAMPLE_TABLE_NAME="$QUANT_SAMPLES_NAME"
+fi
+
+if [ "$METHOD" = "salmon" ] && [ -z "$TX2GENE_OUT" ]; then
+    TX2GENE_OUT="$TX2GENE_FILE"
+fi
+
 if [ ! -f "$METADATA" ]; then
     echo "[ERRO] Metadata nao encontrado: $METADATA"
     exit 1
@@ -227,6 +247,10 @@ echo "[INFO] Quant root: $QUANT_ROOT"
 [ "$METHOD" = "salmon" ] && echo "[INFO] GTF: $GTF"
 [ "$METHOD" = "star" ] && echo "[INFO] STAR count column: $STAR_COUNT_COLUMN"
 echo "[INFO] Output dir: $OUTPUT_DIR"
+echo "[INFO] Counts name: ${COUNTS_NAME:-default project-specific}"
+echo "[INFO] Expression name: ${TPM_NAME:-default project-specific}"
+echo "[INFO] Sample table name: ${SAMPLE_TABLE_NAME:-default project-specific}"
+[ "$METHOD" = "salmon" ] && echo "[INFO] tx2gene: ${TX2GENE_OUT}"
 
 if [ "$DRY_RUN" -eq 1 ]; then
     echo "[DRY-RUN] Comando:"

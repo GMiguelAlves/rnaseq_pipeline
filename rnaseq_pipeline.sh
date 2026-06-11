@@ -32,6 +32,7 @@ Examples:
   bash rnaseq_pipeline.sh --all --dry-run
   bash rnaseq_pipeline.sh --all --local
   bash rnaseq_pipeline.sh --step metadata --step qc
+  bash rnaseq_pipeline.sh --step star
 USAGE
 }
 
@@ -98,6 +99,34 @@ create_rnaseq_output_tree
 
 if [[ "${DRY_RUN}" == "true" || "${PIPELINE_EXECUTOR}" == "local" ]]; then
   export SKIP_SLURM_CHECK="true"
+fi
+
+REQUESTED_QUANT_METHOD=""
+for raw_step in "${REQUESTED_STEPS[@]:-}"; do
+  key="${raw_step,,}"
+  case "${key}" in
+    salmon|star)
+      if [[ -n "${REQUESTED_QUANT_METHOD}" && "${REQUESTED_QUANT_METHOD}" != "${key}" ]]; then
+        die "Conflicting quantification steps requested: salmon and star."
+      fi
+      REQUESTED_QUANT_METHOD="${key}"
+      ;;
+  esac
+done
+
+if [[ -n "${REQUESTED_QUANT_METHOD}" ]]; then
+  export QUANT_METHOD="${REQUESTED_QUANT_METHOD}"
+  if [[ "${QUANT_METHOD}" == "star" ]]; then
+    export RUN_SALMON_INDEX=0
+    export RUN_STAR_GTF_INDEX=1
+    export EXPRESSION_MATRIX_FILE="${STAR_CPM_MATRIX_FILE:-${QUANTIFICATION_DIR}/${STAR_CPM_MATRIX_NAME:-star_cpm_matrix.tsv}}"
+    export EXPRESSION_UNIT="CPM"
+  else
+    export RUN_SALMON_INDEX=1
+    export RUN_STAR_GTF_INDEX=0
+    export EXPRESSION_MATRIX_FILE="${SALMON_TPM_MATRIX_FILE:-${QUANTIFICATION_DIR}/${SALMON_TPM_MATRIX_NAME:-tpm_matrix.tsv}}"
+    export EXPRESSION_UNIT="TPM"
+  fi
 fi
 
 bash "${REPO_ROOT}/scripts/validate_config.sh" "${CONFIG_FILE}"
@@ -374,7 +403,7 @@ if has_step report; then
     --genes "${GENE_REPORT_DIR}/genes.txt" \
     --tpm "${EXPRESSION_MATRIX_FILE}" \
     --expression-unit "${EXPRESSION_UNIT}" \
-    --samples "${QUANTIFICATION_DIR}/quant_samples.tsv" \
+    --samples "${QUANT_SAMPLES_FILE}" \
     --metadata "$(metadata_default)" \
     --deg-root "${DEG_DIR}" \
     --gff "${GENE_REPORT_ANNOTATION_FILE}" \
