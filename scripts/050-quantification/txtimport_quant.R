@@ -27,10 +27,10 @@ metadata_file <- get_arg("--metadata", Sys.getenv("METADATA_FINAL_NEW", unset = 
 quant_root <- get_arg("--quant-root", Sys.getenv("QUANT_DIR", unset = ""))
 gtf_file <- get_arg("--gtf", Sys.getenv("REF_GTF", unset = ""))
 out_dir <- get_arg("--output-dir", Sys.getenv("QUANTIFICATION_DIR", unset = getwd()))
-counts_name <- get_arg("--counts-name", ifelse(project == "", "counts_matrix.tsv", paste0(project, "_counts_matrix.tsv")))
-tpm_name <- get_arg("--tpm-name", ifelse(project == "", "tpm_matrix.tsv", paste0(project, "_tpm_matrix.tsv")))
-sample_table_name <- get_arg("--sample-table-name", ifelse(project == "", "quant_samples.tsv", paste0(project, "_quant_samples.tsv")))
-tx2gene_out <- get_arg("--tx2gene-out", file.path(out_dir, "tx2gene.tsv"))
+counts_name <- get_arg("--counts-name", ifelse(project == "", Sys.getenv("QUANT_COUNTS_MATRIX_NAME", unset = "counts_matrix.tsv"), paste0(project, "_counts_matrix.tsv")))
+tpm_name <- get_arg("--tpm-name", ifelse(project == "", Sys.getenv("SALMON_TPM_MATRIX_NAME", unset = "tpm_matrix.tsv"), paste0(project, "_tpm_matrix.tsv")))
+sample_table_name <- get_arg("--sample-table-name", ifelse(project == "", Sys.getenv("QUANT_SAMPLES_NAME", unset = "quant_samples.tsv"), paste0(project, "_quant_samples.tsv")))
+tx2gene_out <- get_arg("--tx2gene-out", Sys.getenv("TX2GENE_FILE", unset = file.path(out_dir, Sys.getenv("TX2GENE_NAME", unset = "tx2gene.tsv"))))
 allow_missing <- has_flag("--allow-missing")
 
 required_paths <- c(

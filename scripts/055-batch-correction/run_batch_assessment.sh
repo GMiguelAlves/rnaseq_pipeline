@@ -123,7 +123,7 @@ if [ -z "$COUNTS" ]; then
     if [ -n "$PROJECT" ]; then
         COUNTS="${QUANTIFICATION_DIR}/${PROJECT}_counts_matrix.tsv"
     else
-        COUNTS="${QUANTIFICATION_DIR}/counts_matrix.tsv"
+        COUNTS="${QUANT_COUNTS_MATRIX_FILE}"
     fi
 fi
 
@@ -131,7 +131,7 @@ if [ -z "$SAMPLES" ]; then
     if [ -n "$PROJECT" ]; then
         SAMPLES="${QUANTIFICATION_DIR}/${PROJECT}_quant_samples.tsv"
     else
-        SAMPLES="${QUANTIFICATION_DIR}/quant_samples.tsv"
+        SAMPLES="${QUANT_SAMPLES_FILE}"
     fi
 fi
 

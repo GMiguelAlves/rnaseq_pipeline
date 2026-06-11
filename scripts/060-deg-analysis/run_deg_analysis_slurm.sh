@@ -163,6 +163,8 @@ GEN_CMD=(
     --quantification-dir "$QUANTIFICATION_DIR"
     --batch-dir "$BATCH_DIR"
     --output-root "$DEG_DIR"
+    --all-counts "$QUANT_COUNTS_MATRIX_FILE"
+    --all-samples "$QUANT_SAMPLES_FILE"
     --projects "$PROJECTS"
     --test-variables "$TEST_VARIABLES"
     --design-covariates "$DESIGN_COVARIATES"

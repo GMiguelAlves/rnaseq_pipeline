@@ -83,6 +83,7 @@ create_rnaseq_output_tree() {
     "${ALIGN_DIR}/logs" \
     "${ALIGN_DIR}/logs/salmon" \
     "${ALIGN_DIR}/logs/star" \
+    "${QUANT_DIR:-${ALIGN_DIR}/quants}" \
     "${STAR_QUANT_DIR:-${ALIGN_DIR}/star_quant}" \
     "${QUANTIFICATION_DIR}" \
     "${QUANTIFICATION_DIR}/logs" \

@@ -20,9 +20,9 @@ get_arg <- function(flag, default = "") {
 log_info <- function(msg) cat(format(Sys.time(), "[%Y-%m-%d %H:%M:%S]"), msg, "\n")
 
 genes_file <- get_arg("--genes", "genes.txt")
-tpm_file <- get_arg("--tpm", Sys.getenv("EXPRESSION_MATRIX_FILE", unset = file.path(Sys.getenv("QUANTIFICATION_DIR", unset = "../050-quantification"), "tpm_matrix.tsv")))
+tpm_file <- get_arg("--tpm", Sys.getenv("EXPRESSION_MATRIX_FILE", unset = file.path(Sys.getenv("QUANTIFICATION_DIR", unset = "../050-quantification"), Sys.getenv("SALMON_TPM_MATRIX_NAME", unset = "tpm_matrix.tsv"))))
 expression_unit <- get_arg("--expression-unit", Sys.getenv("EXPRESSION_UNIT", unset = "TPM"))
-samples_file <- get_arg("--samples", file.path(Sys.getenv("QUANTIFICATION_DIR", unset = "../050-quantification"), "quant_samples.tsv"))
+samples_file <- get_arg("--samples", Sys.getenv("QUANT_SAMPLES_FILE", unset = file.path(Sys.getenv("QUANTIFICATION_DIR", unset = "../050-quantification"), Sys.getenv("QUANT_SAMPLES_NAME", unset = "quant_samples.tsv"))))
 metadata_file <- get_arg("--metadata", Sys.getenv("METADATA_FINAL_NEW", unset = Sys.getenv("METADATA_FINAL", unset = "")))
 deg_root <- get_arg("--deg-root", Sys.getenv("DEG_DIR", unset = "../060-deg-analysis"))
 gff_file <- get_arg("--gff", Sys.getenv("GENE_REPORT_ANNOTATION_FILE", unset = Sys.getenv("REF_GFF3", unset = "")))

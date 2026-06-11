@@ -2,6 +2,7 @@
 
 import argparse
 import csv
+import os
 from pathlib import Path
 
 
@@ -11,6 +12,8 @@ def parse_args():
     parser.add_argument("--quantification-dir", required=True)
     parser.add_argument("--batch-dir", required=True)
     parser.add_argument("--output-root", required=True)
+    parser.add_argument("--all-counts", default="", help="Counts matrix for all-project analyses.")
+    parser.add_argument("--all-samples", default="", help="Sample table for all-project analyses.")
     parser.add_argument("--projects", default="auto", help="Comma-separated projects or auto.")
     parser.add_argument("--include-all", action="store_true")
     parser.add_argument("--include-corrected", action="store_true")
@@ -54,6 +57,8 @@ def main():
     qdir = Path(args.quantification_dir)
     bdir = Path(args.batch_dir)
     out_root = Path(args.output_root)
+    all_counts = Path(args.all_counts) if args.all_counts else qdir / os.environ.get("QUANT_COUNTS_MATRIX_NAME", "counts_matrix.tsv")
+    all_samples = Path(args.all_samples) if args.all_samples else qdir / os.environ.get("QUANT_SAMPLES_NAME", "quant_samples.tsv")
 
     if args.projects == "auto":
         projects = metadata_projects(args.metadata)
@@ -91,8 +96,8 @@ def main():
             "all_projects",
             "all_projects",
             "raw",
-            qdir / "counts_matrix.tsv",
-            qdir / "quant_samples.tsv",
+            all_counts,
+            all_samples,
             out_root / "all_projects" / "raw",
         )
         if args.include_corrected:

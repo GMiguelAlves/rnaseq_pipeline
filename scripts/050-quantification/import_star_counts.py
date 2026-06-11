@@ -15,6 +15,7 @@ reports.
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 
 import pandas as pd
@@ -103,14 +104,18 @@ def main() -> None:
         allowed = ", ".join(sorted(COUNT_COLUMNS))
         raise SystemExit(f"[ERRO] Invalid --count-column '{args.count_column}'. Use one of: {allowed}")
 
+    all_counts_name = os.environ.get("QUANT_COUNTS_MATRIX_NAME", "counts_matrix.tsv")
+    all_expression_name = os.environ.get("STAR_CPM_MATRIX_NAME", "star_cpm_matrix.tsv")
+    all_sample_table_name = os.environ.get("QUANT_SAMPLES_NAME", "quant_samples.tsv")
+
     counts_name = args.counts_name or (
-        "counts_matrix.tsv" if args.project == "" else f"{args.project}_counts_matrix.tsv"
+        all_counts_name if args.project == "" else f"{args.project}_counts_matrix.tsv"
     )
     expression_name = args.expression_name or (
-        "star_cpm_matrix.tsv" if args.project == "" else f"{args.project}_star_cpm_matrix.tsv"
+        all_expression_name if args.project == "" else f"{args.project}_star_cpm_matrix.tsv"
     )
     sample_table_name = args.sample_table_name or (
-        "quant_samples.tsv" if args.project == "" else f"{args.project}_quant_samples.tsv"
+        all_sample_table_name if args.project == "" else f"{args.project}_quant_samples.tsv"
     )
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
