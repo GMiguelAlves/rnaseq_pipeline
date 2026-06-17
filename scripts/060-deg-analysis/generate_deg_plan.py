@@ -31,9 +31,27 @@ def metadata_projects(path):
     return projects
 
 
+def table_candidates(path):
+    path = Path(path)
+    text = str(path)
+    candidates = [path]
+    if text.endswith(".tsv.gz"):
+        candidates.append(Path(text[:-3]))
+    elif text.endswith(".tsv"):
+        candidates.append(Path(text + ".gz"))
+    return candidates
+
+
+def resolve_table(path):
+    for candidate in table_candidates(path):
+        if candidate.exists():
+            return candidate
+    return Path(path)
+
+
 def add_row(rows, args, scope, project, correction, counts, samples, output_dir):
-    counts_path = Path(counts)
-    samples_path = Path(samples)
+    counts_path = resolve_table(counts)
+    samples_path = resolve_table(samples)
     if not args.allow_missing and (not counts_path.exists() or not samples_path.exists()):
         return
     analysis_id = f"{scope}_{correction}" if scope == "all_projects" else f"{project}_{correction}"
@@ -73,8 +91,8 @@ def main():
             "project",
             project,
             "raw",
-            qdir / f"{project}_counts_matrix.tsv",
-            qdir / f"{project}_quant_samples.tsv",
+            qdir / f"{project}_counts_matrix.tsv{os.environ.get('PIPELINE_TABLE_SUFFIX', '')}",
+            qdir / f"{project}_quant_samples.tsv{os.environ.get('PIPELINE_TABLE_SUFFIX', '')}",
             out_root / project / "raw",
         )
         if args.include_corrected:
@@ -84,8 +102,8 @@ def main():
                 "project",
                 project,
                 "batch_corrected",
-                bdir / project / "counts_batch_corrected.tsv",
-                bdir / project / "batch_correction_samples.tsv",
+                bdir / project / f"counts_batch_corrected.tsv{os.environ.get('PIPELINE_TABLE_SUFFIX', '')}",
+                bdir / project / f"batch_correction_samples.tsv{os.environ.get('PIPELINE_TABLE_SUFFIX', '')}",
                 out_root / project / "batch_corrected",
             )
 
@@ -107,8 +125,8 @@ def main():
                 "all_projects",
                 "all_projects",
                 "batch_corrected",
-                bdir / "all_projects" / "counts_batch_corrected.tsv",
-                bdir / "all_projects" / "batch_correction_samples.tsv",
+                bdir / "all_projects" / f"counts_batch_corrected.tsv{os.environ.get('PIPELINE_TABLE_SUFFIX', '')}",
+                bdir / "all_projects" / f"batch_correction_samples.tsv{os.environ.get('PIPELINE_TABLE_SUFFIX', '')}",
                 out_root / "all_projects" / "batch_corrected",
             )
 

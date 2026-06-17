@@ -39,6 +39,9 @@ export GFF3_URL="https://example.org/annotation.gff3.gz"
 # star: genome alignment plus STAR GeneCounts. Needs genome + GTF/GFF3.
 export QUANT_METHOD="salmon"       # Use "salmon" or "star".
 export STAR_GENECOUNT_COLUMN="unstranded"
+# STAR BAM sorting memory, in bytes. Increase if STAR reports:
+# "not enough memory for BAM sorting" and prints a larger required value.
+export STAR_LIMIT_BAM_SORT_RAM=12000000000
 
 # Optional: customize where quantification outputs are written.
 # Relative paths are resolved from the repository root.
@@ -74,6 +77,7 @@ export LOCAL_CPUS_PER_TASK=8       # Used only when PIPELINE_EXECUTOR="local".
 #          individual FastQC folders and STAR BAMs. Saves the most disk, but
 #          rerunning QC/alignment requires downloading/processing again.
 export PIPELINE_STORAGE_MODE="full"  # Use "balanced" or "minimal" to save disk.
+export PIPELINE_COMPRESS_RESULTS=1   # Writes large TSV outputs as .tsv.gz.
 
 # 9) Usually keep these defaults.
 if [[ "$QUANT_METHOD" == "star" ]]; then
@@ -85,10 +89,24 @@ else
 fi
 export RUN_STAR_INDEX=0
 export RUN_BATCH_CORRECTION=0
+export RUN_DTU_ANALYSIS=0
+export RUN_SPLICING_ANALYSIS=0
 export RUN_GENE_REPORT=0
+
+# Optional downstream analyses.
+# DTU uses Salmon quant.sf files and tx2gene from step 050.
+# Splicing uses STAR sorted BAMs and a GTF annotation through rMATS.
+# If enabling splicing, use QUANT_METHOD="star" in the same run or keep prior
+# STAR BAMs under STAR_QUANT_DIR.
+# export DTU_TEST_VARIABLES="condition,stage,sex,tissue,infection_mode"
+# export SPLICING_TEST_VARIABLES="condition,stage,sex,tissue,infection_mode"
+# export SPLICING_READ_LENGTH=100
+# export SPLICING_LIB_TYPE="fr-unstranded"
 
 # 10) Conda environment names. Change only if your server uses other names.
 export RNA_TOOLS_ENV="rna-tools"
 export PYTHON_ENV="python-list"
 export R_ANALYSIS_ENV="r-analysis"
 export BATCH_CORRECTION_ENV="batch-correction"
+export DTU_ANALYSIS_ENV="r-analysis"
+export SPLICING_ENV="splicing"

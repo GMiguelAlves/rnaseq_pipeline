@@ -51,6 +51,14 @@ case "${QUANT_METHOD:-salmon}" in
     ;;
 esac
 
+case "${PIPELINE_COMPRESS_RESULTS:-1}" in
+  0|1|true|TRUE|yes|YES|false|FALSE|no|NO|y|Y|n|N)
+    ;;
+  *)
+    die "PIPELINE_COMPRESS_RESULTS must be 0/1 or yes/no. Current value: ${PIPELINE_COMPRESS_RESULTS}"
+    ;;
+esac
+
 case "${STAR_GENECOUNT_COLUMN:-unstranded}" in
   unstranded|stranded_forward|stranded_reverse|2|3|4)
     ;;
@@ -58,6 +66,10 @@ case "${STAR_GENECOUNT_COLUMN:-unstranded}" in
     die "STAR_GENECOUNT_COLUMN must be unstranded, stranded_forward, stranded_reverse, 2, 3, or 4."
     ;;
 esac
+
+if ! [[ "${STAR_LIMIT_BAM_SORT_RAM:-}" =~ ^[0-9]+$ ]] || [[ "${STAR_LIMIT_BAM_SORT_RAM}" -lt 1 ]]; then
+  die "STAR_LIMIT_BAM_SORT_RAM must be a positive integer in bytes. Current value: ${STAR_LIMIT_BAM_SORT_RAM:-unset}"
+fi
 
 if [[ "${RUN_SALMON_INDEX}" == "1" && -z "${REF_TRANSCRIPTS_FA}" && -z "${TRANSCRIPTS_URL}" ]]; then
   die "Salmon index requested, but REF_TRANSCRIPTS_FA and TRANSCRIPTS_URL are empty."
@@ -108,7 +120,9 @@ for flag in \
   CLEANUP_TRIMMED_RUNS \
   CLEANUP_TRIMMED_MERGED \
   CLEANUP_FASTQ_FTP \
-  CLEANUP_STAR_BAM
+  CLEANUP_STAR_BAM \
+  RUN_DTU_ANALYSIS \
+  RUN_SPLICING_ANALYSIS
 do
   case "${!flag:-0}" in
     0|1|true|TRUE|yes|YES|false|FALSE|no|NO|y|Y|n|N)
@@ -118,6 +132,51 @@ do
       ;;
   esac
 done
+
+for numeric_var in \
+  DTU_MIN_REPLICATES \
+  DTU_MIN_GENE_COUNT \
+  DTU_MIN_TRANSCRIPTS_PER_GENE \
+  DTU_CONCURRENCY \
+  SPLICING_MIN_REPLICATES \
+  SPLICING_READ_LENGTH \
+  SPLICING_CONCURRENCY
+do
+  numeric_value="${!numeric_var:-}"
+  if ! [[ "${numeric_value}" =~ ^[0-9]+$ ]] || [[ "${numeric_value}" -lt 1 ]]; then
+    die "${numeric_var} must be a positive integer. Current value: ${numeric_value:-unset}"
+  fi
+done
+unset numeric_var numeric_value
+
+case "${SPLICING_LIB_TYPE:-fr-unstranded}" in
+  fr-unstranded|fr-firststrand|fr-secondstrand)
+    ;;
+  *)
+    die "SPLICING_LIB_TYPE must be fr-unstranded, fr-firststrand, or fr-secondstrand. Current value: ${SPLICING_LIB_TYPE}"
+    ;;
+esac
+
+if [[ "${RUN_DTU_ANALYSIS:-0}" == "1" ]]; then
+  if [[ "${QUANT_METHOD:-salmon}" != "salmon" ]]; then
+    warn "RUN_DTU_ANALYSIS=1 but QUANT_METHOD=${QUANT_METHOD}. DTU uses Salmon transcript-level quant.sf files; it can run only if Salmon quantifications already exist under QUANT_DIR."
+  fi
+  if [[ -z "${REF_TRANSCRIPTS_FA:-}" && -z "${TRANSCRIPTS_URL:-}" && ! -f "${TX2GENE_FILE:-}" ]]; then
+    die "RUN_DTU_ANALYSIS=1 needs transcript annotation through REF_TRANSCRIPTS_FA/TRANSCRIPTS_URL or an existing TX2GENE_FILE."
+  fi
+fi
+
+if [[ "${RUN_SPLICING_ANALYSIS:-0}" == "1" ]]; then
+  if [[ "${QUANT_METHOD:-salmon}" != "star" ]]; then
+    warn "RUN_SPLICING_ANALYSIS=1 but QUANT_METHOD=${QUANT_METHOD}. Splicing uses STAR sorted BAMs; it can run only if STAR BAMs already exist under STAR_QUANT_DIR."
+  fi
+  if [[ -z "${REF_GTF:-}" && -z "${GTF_URL:-}" ]]; then
+    die "RUN_SPLICING_ANALYSIS=1 needs REF_GTF or GTF_URL because rMATS requires a GTF annotation."
+  fi
+  if [[ "${PIPELINE_STORAGE_MODE:-full}" == "minimal" ]]; then
+    warn "RUN_SPLICING_ANALYSIS=1 with PIPELINE_STORAGE_MODE=minimal: STAR BAM cleanup is disabled by default in config, because rMATS needs BAM files."
+  fi
+fi
 
 while read -r project; do
   [[ -n "${project}" ]] || continue

@@ -177,22 +177,87 @@ if [ "$METHOD" = "salmon" ] && [ -z "$TX2GENE_OUT" ]; then
     TX2GENE_OUT="$TX2GENE_FILE"
 fi
 
-if [ ! -f "$METADATA" ]; then
+if [ "$DRY_RUN" -eq 0 ] && [ ! -f "$METADATA" ]; then
     echo "[ERRO] Metadata nao encontrado: $METADATA"
     exit 1
 fi
 
-if [ ! -d "$QUANT_ROOT" ]; then
+if [ "$DRY_RUN" -eq 0 ] && [ ! -d "$QUANT_ROOT" ]; then
     echo "[ERRO] Quant root nao encontrado: $QUANT_ROOT"
     exit 1
 fi
 
-if [ "$METHOD" = "salmon" ] && [ ! -f "$GTF" ]; then
+if [ "$DRY_RUN" -eq 0 ] && [ "$METHOD" = "salmon" ] && [ ! -f "$GTF" ]; then
     echo "[ERRO] GTF nao encontrado: $GTF"
     exit 1
 fi
 
 mkdir -p "$OUTPUT_DIR"
+
+if [ -z "$PROJECT" ]; then
+    mapfile -t PROJECT_LIST < <(pipeline_projects)
+    if [ "${#PROJECT_LIST[@]}" -eq 0 ]; then
+        echo "[ERRO] Nenhum projeto configurado em PIPELINE_PROJECTS."
+        exit 1
+    fi
+
+    echo "[INFO] Modo all: atualizando saidas por projeto e reconstruindo matriz global."
+    for project_name in "${PROJECT_LIST[@]}"; do
+        PROJECT_CMD=(
+            bash "${SCRIPT_DIR}/run_quantification.sh"
+            "$project_name"
+            --method "$METHOD"
+            --metadata "$METADATA"
+            --quant-root "$QUANT_ROOT"
+            --output-dir "$OUTPUT_DIR"
+        )
+        if [ "$METHOD" = "salmon" ]; then
+            PROJECT_CMD+=(--gtf "$GTF")
+            if [ -n "$TX2GENE_OUT" ]; then
+                PROJECT_CMD+=(--tx2gene-out "$TX2GENE_OUT")
+            fi
+        else
+            PROJECT_CMD+=(--star-count-column "$STAR_COUNT_COLUMN")
+        fi
+        if [ "$ALLOW_MISSING" -eq 1 ]; then
+            PROJECT_CMD+=(--allow-missing)
+        fi
+
+        if [ "$DRY_RUN" -eq 1 ]; then
+            echo "[DRY-RUN] Projeto ${project_name}:"
+            printf ' %q' "${PROJECT_CMD[@]}"
+            echo
+        else
+            "${PROJECT_CMD[@]}"
+        fi
+    done
+
+    MERGE_CMD=(
+        python "${SCRIPT_DIR}/merge_project_matrices.py"
+        --output-dir "$OUTPUT_DIR"
+        --method "$METHOD"
+        --projects auto
+        --counts-name "$COUNTS_NAME"
+        --expression-name "$TPM_NAME"
+        --sample-table-name "$SAMPLE_TABLE_NAME"
+    )
+    if [ "$ALLOW_MISSING" -eq 1 ]; then
+        MERGE_CMD+=(--allow-missing)
+    fi
+
+    if [ "$DRY_RUN" -eq 1 ]; then
+        echo "[DRY-RUN] Merge global:"
+        printf ' %q' "${MERGE_CMD[@]}"
+        echo
+        exit 0
+    fi
+
+    activate_python_env
+    check_command python
+    echo "+ ${MERGE_CMD[*]}"
+    "${MERGE_CMD[@]}"
+    exit 0
+fi
 
 if [ "$METHOD" = "star" ]; then
     CMD=(

@@ -21,7 +21,7 @@ Options:
   --all                  Run the complete RNA-seq workflow
   --step STEP            Run one step. Can be repeated.
                          Steps: reference, download, metadata, qc, salmon/star,
-                                tximport, batch, deg, report
+                                tximport, batch, deg, dtu, splicing, report
   --executor MODE        Execution backend: slurm or local
   --local                Shortcut for --executor local
   --dry-run              Print commands without executing jobs
@@ -146,6 +146,11 @@ declare -A STEP_ALIASES=(
   [import]="tximport"
   [batch]="batch"
   [deg]="deg"
+  [dtu]="dtu"
+  [dtu-analysis]="dtu"
+  [transcript-usage]="dtu"
+  [splicing]="splicing"
+  [as]="splicing"
   [report]="report"
 )
 
@@ -155,6 +160,8 @@ if [[ "${RUN_ALL}" == "true" ]]; then
     SELECTED["${step}"]=1
   done
   [[ "${RUN_BATCH_CORRECTION}" == "1" ]] && SELECTED["batch"]=1
+  [[ "${RUN_DTU_ANALYSIS}" == "1" ]] && SELECTED["dtu"]=1
+  [[ "${RUN_SPLICING_ANALYSIS}" == "1" ]] && SELECTED["splicing"]=1
   [[ "${RUN_GENE_REPORT}" == "1" ]] && SELECTED["report"]=1
 else
   for raw_step in "${REQUESTED_STEPS[@]}"; do
@@ -288,6 +295,8 @@ META_MERGE_JOB=""
 TXIMPORT_JOB=""
 BATCH_JOB=""
 DEG_JOB=""
+DTU_JOB=""
+SPLICING_JOB=""
 
 if has_step reference; then
   if [[ "${RUN_SALMON_INDEX}" == "1" ]]; then
@@ -395,9 +404,29 @@ if has_step deg; then
   DEG_JOB="${SUBMITTED_JOB_ID}"
 fi
 
+if has_step dtu; then
+  dtu_args=(--chdir="${DTU_DIR}" --export="ALL,PROJECT_DIR=${PROJECT_DIR},PIPELINE_CONFIG=${CONFIG_FILE},PIPELINE_EXECUTOR=${PIPELINE_EXECUTOR},STEP_DIR=${DTU_SCRIPTS_DIR}")
+  if [[ "${RUN_ALL}" == "true" ]]; then
+    dep_arg="$(dependency_arg "${TXIMPORT_JOB}")"
+    [[ -n "${dep_arg}" ]] && dtu_args+=("${dep_arg}")
+  fi
+  submit_or_print "${dtu_args[@]}" "${DTU_SCRIPTS_DIR}/run_dtu_analysis_slurm.sh" --include-all
+  DTU_JOB="${SUBMITTED_JOB_ID}"
+fi
+
+if has_step splicing; then
+  splicing_args=(--chdir="${SPLICING_DIR}" --export="ALL,PROJECT_DIR=${PROJECT_DIR},PIPELINE_CONFIG=${CONFIG_FILE},PIPELINE_EXECUTOR=${PIPELINE_EXECUTOR},STEP_DIR=${SPLICING_SCRIPTS_DIR}")
+  if [[ "${RUN_ALL}" == "true" ]]; then
+    dep_arg="$(dependency_arg "${ALIGNMENT_JOBS[@]:-}")"
+    [[ -n "${dep_arg}" ]] && splicing_args+=("${dep_arg}")
+  fi
+  submit_or_print "${splicing_args[@]}" "${SPLICING_SCRIPTS_DIR}/run_splicing_analysis_slurm.sh" --include-all
+  SPLICING_JOB="${SUBMITTED_JOB_ID}"
+fi
+
 if has_step report; then
   report_args=(--chdir="${GENE_REPORT_DIR}" --export="ALL,PROJECT_DIR=${PROJECT_DIR},PIPELINE_CONFIG=${CONFIG_FILE},PIPELINE_EXECUTOR=${PIPELINE_EXECUTOR},STEP_DIR=${GENE_REPORT_SCRIPTS_DIR}")
-  dep_arg="$(dependency_arg "${DEG_JOB}")"
+  dep_arg="$(dependency_arg "${DEG_JOB}" "${DTU_JOB}" "${SPLICING_JOB}")"
   [[ "${RUN_ALL}" == "true" && -n "${dep_arg}" ]] && report_args+=("${dep_arg}")
   submit_or_print "${report_args[@]}" "${GENE_REPORT_SCRIPTS_DIR}/gene_report_job.sh" \
     --genes "${GENE_REPORT_DIR}/genes.txt" \
@@ -406,6 +435,8 @@ if has_step report; then
     --samples "${QUANT_SAMPLES_FILE}" \
     --metadata "$(metadata_default)" \
     --deg-root "${DEG_DIR}" \
+    --dtu-root "${DTU_DIR}" \
+    --splicing-root "${SPLICING_DIR}" \
     --gff "${GENE_REPORT_ANNOTATION_FILE}" \
     --output-dir "${GENE_REPORT_DIR}/results" \
     --title "${GENE_REPORT_TITLE}"

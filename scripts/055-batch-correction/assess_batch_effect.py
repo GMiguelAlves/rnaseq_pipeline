@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import os
 from pathlib import Path
 
 import numpy as np
@@ -9,6 +10,7 @@ import pandas as pd
 
 
 def parse_args():
+    table_suffix = os.environ.get("PIPELINE_TABLE_SUFFIX", "")
     parser = argparse.ArgumentParser(
         description="Assess batch effect strength before and optionally after correction."
     )
@@ -28,8 +30,8 @@ def parse_args():
     parser.add_argument("--permutations", type=int, default=199)
     parser.add_argument("--seed", type=int, default=13)
     parser.add_argument("--report-name", default="batch_effect_assessment.json")
-    parser.add_argument("--metrics-name", default="batch_effect_metrics.tsv")
-    parser.add_argument("--pc-scores-name", default="batch_effect_pc_scores.tsv")
+    parser.add_argument("--metrics-name", default=f"batch_effect_metrics.tsv{table_suffix}")
+    parser.add_argument("--pc-scores-name", default=f"batch_effect_pc_scores.tsv{table_suffix}")
     parser.add_argument("--plot-name", default="batch_effect_pca.png")
     return parser.parse_args()
 

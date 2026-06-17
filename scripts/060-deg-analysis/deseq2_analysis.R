@@ -1,4 +1,4 @@
-	#!/usr/bin/env Rscript
+#!/usr/bin/env Rscript
 
 suppressPackageStartupMessages({
   library(DESeq2)
@@ -59,6 +59,21 @@ sanitize_value <- function(x) {
   x
 }
 
+table_suffix <- Sys.getenv("PIPELINE_TABLE_SUFFIX", unset = "")
+
+add_table_suffix <- function(path) {
+  if (table_suffix != "" && grepl("\\.tsv$", path)) {
+    return(paste0(path, table_suffix))
+  }
+  path
+}
+
+read_delim_auto <- function(path, ...) {
+  con <- if (grepl("\\.gz$", path)) gzfile(path, "rt") else file(path, "rt")
+  on.exit(close(con))
+  read.delim(con, ...)
+}
+
 make_import_id <- function(samples, count_names) {
   if ("import_id" %in% colnames(samples) && all(count_names %in% samples$import_id)) {
     return(samples$import_id)
@@ -76,7 +91,7 @@ make_import_id <- function(samples, count_names) {
 }
 
 read_counts <- function(path) {
-  counts <- read.delim(path, header = TRUE, sep = "\t", check.names = FALSE, stringsAsFactors = FALSE)
+  counts <- read_delim_auto(path, header = TRUE, sep = "\t", check.names = FALSE, stringsAsFactors = FALSE)
   if (ncol(counts) < 2) stop("[ERRO] Matriz de counts invalida: ", path)
   gene_ids <- counts[[1]]
   counts <- counts[, -1, drop = FALSE]
@@ -90,7 +105,7 @@ read_counts <- function(path) {
 }
 
 read_samples <- function(path, count_names) {
-  samples <- read.delim(path, header = TRUE, sep = "\t", check.names = FALSE, stringsAsFactors = FALSE)
+  samples <- read_delim_auto(path, header = TRUE, sep = "\t", check.names = FALSE, stringsAsFactors = FALSE)
   samples$import_id <- make_import_id(samples, count_names)
   samples <- samples[!duplicated(samples$import_id), , drop = FALSE]
   missing_meta <- setdiff(count_names, samples$import_id)
@@ -131,7 +146,10 @@ annotate_results <- function(res_df, annotations) {
 safe_filename <- function(x) sanitize_value(x)
 
 write_tsv <- function(df, path) {
-  write.table(df, path, sep = "\t", quote = FALSE, row.names = FALSE, na = "")
+  path <- add_table_suffix(path)
+  con <- if (grepl("\\.gz$", path)) gzfile(path, "wt") else file(path, "wt")
+  on.exit(close(con))
+  write.table(df, con, sep = "\t", quote = FALSE, row.names = FALSE, na = "")
 }
 
 plot_pca <- function(vsd, coldata, color_var, shape_var, path) {
@@ -278,8 +296,9 @@ for (test_var in available_tests) {
   saveRDS(dds, file.path(out_dir, paste0("dds_", safe_filename(test_var), ".rds")))
 
   norm <- counts(dds, normalized = TRUE)
-  write.table(norm, file.path(out_dir, paste0("normalized_counts_", safe_filename(test_var), ".tsv")),
-              sep = "\t", quote = FALSE, col.names = NA)
+  norm_df <- as.data.frame(norm, check.names = FALSE)
+  norm_df <- cbind(gene_id = rownames(norm_df), norm_df)
+  write_tsv(norm_df, file.path(out_dir, paste0("normalized_counts_", safe_filename(test_var), ".tsv")))
 
   vsd <- tryCatch(vst(dds, blind = FALSE), error = function(e) varianceStabilizingTransformation(dds, blind = FALSE))
   shape_var <- if ("dataset" %in% colnames(coldata)) "dataset" else if ("batch" %in% colnames(coldata)) "batch" else NULL
@@ -370,4 +389,3 @@ print(summary_df)
 sink()
 
 log_info(paste("[OK] Analise DEG concluida:", out_dir))
-

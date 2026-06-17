@@ -86,6 +86,15 @@ fi
 # ---------------------------------------------------------------------------
 export PIPELINE_NAME="${PIPELINE_NAME:-rnaseq_pipeline}"
 export ORGANISM_NAME="${ORGANISM_NAME:-custom_organism}"
+export PIPELINE_COMPRESS_RESULTS="${PIPELINE_COMPRESS_RESULTS:-1}"
+case "${PIPELINE_COMPRESS_RESULTS,,}" in
+    1|true|yes|y)
+        export PIPELINE_TABLE_SUFFIX="${PIPELINE_TABLE_SUFFIX:-.gz}"
+        ;;
+    *)
+        export PIPELINE_TABLE_SUFFIX="${PIPELINE_TABLE_SUFFIX:-}"
+        ;;
+esac
 
 # Space- or comma-separated ENA/SRA project accessions, for example:
 #   export PIPELINE_PROJECTS="PRJNA000001 PRJEB000002"
@@ -108,6 +117,8 @@ export ALIGN_DIR="${ALIGN_DIR:-${PROJECT_DIR}/040-alignment}"
 export QUANTIFICATION_DIR="${QUANTIFICATION_DIR:-${PROJECT_DIR}/050-quantification}"
 export BATCH_DIR="${BATCH_DIR:-${PROJECT_DIR}/055-batch-correction}"
 export DEG_DIR="${DEG_DIR:-${PROJECT_DIR}/060-deg-analysis}"
+export DTU_DIR="${DTU_DIR:-${PROJECT_DIR}/070-dtu-analysis}"
+export SPLICING_DIR="${SPLICING_DIR:-${PROJECT_DIR}/080-splicing}"
 export GENE_REPORT_DIR="${GENE_REPORT_DIR:-${PROJECT_DIR}/090-search-gene}"
 export ENVS_DIR="${ENVS_DIR:-${PROJECT_DIR}/envs}"
 
@@ -122,6 +133,8 @@ export ALIGN_SCRIPTS_DIR="${ALIGN_SCRIPTS_DIR:-${SCRIPTS_DIR}/040-alignment}"
 export QUANT_SCRIPTS_DIR="${QUANT_SCRIPTS_DIR:-${SCRIPTS_DIR}/050-quantification}"
 export BATCH_SCRIPTS_DIR="${BATCH_SCRIPTS_DIR:-${SCRIPTS_DIR}/055-batch-correction}"
 export DEG_SCRIPTS_DIR="${DEG_SCRIPTS_DIR:-${SCRIPTS_DIR}/060-deg-analysis}"
+export DTU_SCRIPTS_DIR="${DTU_SCRIPTS_DIR:-${SCRIPTS_DIR}/070-dtu-analysis}"
+export SPLICING_SCRIPTS_DIR="${SPLICING_SCRIPTS_DIR:-${SCRIPTS_DIR}/080-splicing}"
 export GENE_REPORT_SCRIPTS_DIR="${GENE_REPORT_SCRIPTS_DIR:-${SCRIPTS_DIR}/090-search-gene}"
 
 export REF_DATA_DIR="${REF_DATA_DIR:-${REF_DIR}/data}"
@@ -204,16 +217,17 @@ export SALMON_KMER_SIZE="${SALMON_KMER_SIZE:-31}"
 export STAR_GENOME_SA_INDEX_NBASES="${STAR_GENOME_SA_INDEX_NBASES:-12}"
 export STAR_GTF_GENOME_SA_INDEX_NBASES="${STAR_GTF_GENOME_SA_INDEX_NBASES:-10}"
 export STAR_LIMIT_GENOME_GENERATE_RAM="${STAR_LIMIT_GENOME_GENERATE_RAM:-170000000000}"
+export STAR_LIMIT_BAM_SORT_RAM="${STAR_LIMIT_BAM_SORT_RAM:-12000000000}"
 export STAR_GENECOUNT_COLUMN="${STAR_GENECOUNT_COLUMN:-unstranded}"
 export STAR_GENECOUNT_COLUMN="${STAR_GENECOUNT_COLUMN,,}"
 export STAR_READ_FILES_COMMAND="${STAR_READ_FILES_COMMAND:-zcat}"
 export STAR_EXTRA_ARGS="${STAR_EXTRA_ARGS:-}"
 
-export QUANT_COUNTS_MATRIX_NAME="${QUANT_COUNTS_MATRIX_NAME:-counts_matrix.tsv}"
-export SALMON_TPM_MATRIX_NAME="${SALMON_TPM_MATRIX_NAME:-tpm_matrix.tsv}"
-export STAR_CPM_MATRIX_NAME="${STAR_CPM_MATRIX_NAME:-star_cpm_matrix.tsv}"
-export QUANT_SAMPLES_NAME="${QUANT_SAMPLES_NAME:-quant_samples.tsv}"
-export TX2GENE_NAME="${TX2GENE_NAME:-tx2gene.tsv}"
+export QUANT_COUNTS_MATRIX_NAME="${QUANT_COUNTS_MATRIX_NAME:-counts_matrix.tsv${PIPELINE_TABLE_SUFFIX}}"
+export SALMON_TPM_MATRIX_NAME="${SALMON_TPM_MATRIX_NAME:-tpm_matrix.tsv${PIPELINE_TABLE_SUFFIX}}"
+export STAR_CPM_MATRIX_NAME="${STAR_CPM_MATRIX_NAME:-star_cpm_matrix.tsv${PIPELINE_TABLE_SUFFIX}}"
+export QUANT_SAMPLES_NAME="${QUANT_SAMPLES_NAME:-quant_samples.tsv${PIPELINE_TABLE_SUFFIX}}"
+export TX2GENE_NAME="${TX2GENE_NAME:-tx2gene.tsv${PIPELINE_TABLE_SUFFIX}}"
 
 export QUANT_COUNTS_MATRIX_FILE="${QUANT_COUNTS_MATRIX_FILE:-${QUANTIFICATION_DIR}/${QUANT_COUNTS_MATRIX_NAME}}"
 export SALMON_TPM_MATRIX_FILE="${SALMON_TPM_MATRIX_FILE:-${QUANTIFICATION_DIR}/${SALMON_TPM_MATRIX_NAME}}"
@@ -246,6 +260,8 @@ export QC_SAMPLE_CONCURRENCY="${QC_SAMPLE_CONCURRENCY:-10}"
 export SALMON_CONCURRENCY="${SALMON_CONCURRENCY:-10}"
 export STAR_QUANT_CONCURRENCY="${STAR_QUANT_CONCURRENCY:-2}"
 export DEG_CONCURRENCY="${DEG_CONCURRENCY:-2}"
+export DTU_CONCURRENCY="${DTU_CONCURRENCY:-1}"
+export SPLICING_CONCURRENCY="${SPLICING_CONCURRENCY:-2}"
 export PIPELINE_EXECUTOR="${PIPELINE_EXECUTOR:-slurm}"
 export LOCAL_CPUS_PER_TASK="${LOCAL_CPUS_PER_TASK:-$THREADS}"
 export RUN_STAR_INDEX="${RUN_STAR_INDEX:-0}"
@@ -257,6 +273,8 @@ else
     export RUN_STAR_GTF_INDEX="${RUN_STAR_GTF_INDEX:-0}"
 fi
 export RUN_BATCH_CORRECTION="${RUN_BATCH_CORRECTION:-0}"
+export RUN_DTU_ANALYSIS="${RUN_DTU_ANALYSIS:-0}"
+export RUN_SPLICING_ANALYSIS="${RUN_SPLICING_ANALYSIS:-0}"
 export RUN_GENE_REPORT="${RUN_GENE_REPORT:-0}"
 export PIPELINE_WAIT_FOR_CHILD_JOBS="${PIPELINE_WAIT_FOR_CHILD_JOBS:-1}"
 
@@ -296,6 +314,9 @@ case "$PIPELINE_STORAGE_MODE" in
         default_cleanup_trimmed_merged=1
         default_cleanup_fastq_ftp=1
         default_cleanup_star_bam=1
+        if [[ "${RUN_SPLICING_ANALYSIS}" == "1" ]]; then
+            default_cleanup_star_bam=0
+        fi
         ;;
     *)
         echo "[ERRO] PIPELINE_STORAGE_MODE invalido: ${PIPELINE_STORAGE_MODE}. Use full, balanced ou minimal." >&2
@@ -319,6 +340,16 @@ export BATCH_COLUMN="${BATCH_COLUMN:-dataset}"
 export BATCH_COVARIATES="${BATCH_COVARIATES:-}"
 export DEG_TEST_VARIABLES="${DEG_TEST_VARIABLES:-condition,stage,sex,tissue,infection_mode}"
 export DEG_DESIGN_COVARIATES="${DEG_DESIGN_COVARIATES:-}"
+export DTU_TEST_VARIABLES="${DTU_TEST_VARIABLES:-$DEG_TEST_VARIABLES}"
+export DTU_MIN_REPLICATES="${DTU_MIN_REPLICATES:-2}"
+export DTU_MIN_GENE_COUNT="${DTU_MIN_GENE_COUNT:-10}"
+export DTU_MIN_TRANSCRIPTS_PER_GENE="${DTU_MIN_TRANSCRIPTS_PER_GENE:-2}"
+export SPLICING_TEST_VARIABLES="${SPLICING_TEST_VARIABLES:-condition,stage,sex,tissue,infection_mode}"
+export SPLICING_MIN_REPLICATES="${SPLICING_MIN_REPLICATES:-2}"
+export SPLICING_READ_LENGTH="${SPLICING_READ_LENGTH:-100}"
+export SPLICING_LIB_TYPE="${SPLICING_LIB_TYPE:-fr-unstranded}"
+export SPLICING_RMATS_COMMAND="${SPLICING_RMATS_COMMAND:-rmats.py}"
+export SPLICING_FDR_THRESHOLD="${SPLICING_FDR_THRESHOLD:-0.05}"
 export GENE_REPORT_TITLE="${GENE_REPORT_TITLE:-Candidate gene report}"
 
 # Generic defaults used by 090-search-gene. Projects with organism-specific
@@ -340,6 +371,8 @@ export RNA_TOOLS_ENV="${RNA_TOOLS_ENV:-rna-tools}"
 export R_ANALYSIS_ENV="${R_ANALYSIS_ENV:-r-analysis}"
 export PYTHON_ENV="${PYTHON_ENV:-python-list}"
 export BATCH_CORRECTION_ENV="${BATCH_CORRECTION_ENV:-batch-correction}"
+export DTU_ANALYSIS_ENV="${DTU_ANALYSIS_ENV:-$R_ANALYSIS_ENV}"
+export SPLICING_ENV="${SPLICING_ENV:-splicing}"
 
 pipeline_projects() {
     local projects="${PIPELINE_PROJECTS//,/ }"
@@ -390,6 +423,14 @@ activate_r_analysis() {
 
 activate_batch_correction() {
     activate_conda_env "$BATCH_CORRECTION_ENV"
+}
+
+activate_dtu_analysis() {
+    activate_conda_env "$DTU_ANALYSIS_ENV"
+}
+
+activate_splicing() {
+    activate_conda_env "$SPLICING_ENV"
 }
 
 check_command() {

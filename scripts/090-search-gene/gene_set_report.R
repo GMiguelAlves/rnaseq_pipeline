@@ -25,12 +25,30 @@ expression_unit <- get_arg("--expression-unit", Sys.getenv("EXPRESSION_UNIT", un
 samples_file <- get_arg("--samples", Sys.getenv("QUANT_SAMPLES_FILE", unset = file.path(Sys.getenv("QUANTIFICATION_DIR", unset = "../050-quantification"), Sys.getenv("QUANT_SAMPLES_NAME", unset = "quant_samples.tsv"))))
 metadata_file <- get_arg("--metadata", Sys.getenv("METADATA_FINAL_NEW", unset = Sys.getenv("METADATA_FINAL", unset = "")))
 deg_root <- get_arg("--deg-root", Sys.getenv("DEG_DIR", unset = "../060-deg-analysis"))
+dtu_root <- get_arg("--dtu-root", Sys.getenv("DTU_DIR", unset = "../070-dtu-analysis"))
+splicing_root <- get_arg("--splicing-root", Sys.getenv("SPLICING_DIR", unset = "../080-splicing"))
 gff_file <- get_arg("--gff", Sys.getenv("GENE_REPORT_ANNOTATION_FILE", unset = Sys.getenv("REF_GFF3", unset = "")))
 out_dir <- get_arg("--output-dir", file.path(Sys.getenv("GENE_REPORT_DIR", unset = "."), "results"))
 report_title <- get_arg("--title", "Relatorio exploratorio de genes")
 if (is.na(expression_unit) || expression_unit == "") expression_unit <- "TPM"
 expression_log_label <- paste0("log2(", expression_unit, "+1)")
 expression_mean_log_label <- paste0("Media log2(", expression_unit, "+1)")
+
+resolve_table_file <- function(path) {
+  if (path == "" || file.exists(path)) return(path)
+  if (grepl("\\.gz$", path)) {
+    plain <- sub("\\.gz$", "", path)
+    if (file.exists(plain)) return(plain)
+  } else {
+    gz <- paste0(path, ".gz")
+    if (file.exists(gz)) return(gz)
+  }
+  path
+}
+
+tpm_file <- resolve_table_file(tpm_file)
+samples_file <- resolve_table_file(samples_file)
+metadata_file <- resolve_table_file(metadata_file)
 
 if (!file.exists(genes_file)) stop("[ERRO] genes.txt nao encontrado: ", genes_file)
 if (!file.exists(tpm_file)) stop("[ERRO] Matriz de expressao nao encontrada: ", tpm_file)
@@ -51,7 +69,16 @@ sanitize <- function(x) {
   x
 }
 
-write_tsv2 <- function(df, path) readr::write_tsv(df, path, na = "")
+table_suffix <- Sys.getenv("PIPELINE_TABLE_SUFFIX", unset = "")
+
+add_table_suffix <- function(path) {
+  if (table_suffix != "" && grepl("\\.tsv$", path)) {
+    return(paste0(path, table_suffix))
+  }
+  path
+}
+
+write_tsv2 <- function(df, path) readr::write_tsv(df, add_table_suffix(path), na = "")
 
 safe_div <- function(x, y) {
   ifelse(is.na(y) | y == 0, NA_real_, x / y)
@@ -366,7 +393,7 @@ load_deg_hits <- function(deg_root, gene_catalog) {
     neg_log10_padj = numeric(),
     significant = logical()
   )
-  files <- list.files(deg_root, pattern = "DEGs(_all)?_results.tsv$", recursive = TRUE, full.names = TRUE)
+  files <- list.files(deg_root, pattern = "DEGs(_all)?_results\\.tsv(\\.gz)?$", recursive = TRUE, full.names = TRUE)
   if (length(files) == 0) return(empty_deg)
   rows <- lapply(files, function(path) {
     df <- tryCatch(readr::read_tsv(path, show_col_types = FALSE, col_types = cols(.default = col_character())), error = function(e) NULL)
@@ -379,7 +406,7 @@ load_deg_hits <- function(deg_root, gene_catalog) {
       dplyr::mutate(
         source_file = rel,
         result_dir = result_dir,
-        deg_project = sub("/.*$", "", result_dir),
+        deg_project = ifelse(result_dir %in% c(".", ""), "unknown", sub("/.*$", "", result_dir)),
         deg_mode = ifelse(grepl("/", result_dir), sub("^.*/", "", result_dir), "unknown"),
         contrast_label = paste(result_dir, contrast, sep = " | "),
         padj_num = suppressWarnings(as.numeric(padj)),
@@ -390,6 +417,132 @@ load_deg_hits <- function(deg_root, gene_catalog) {
   })
   out <- dplyr::bind_rows(rows)
   if (nrow(out) == 0) empty_deg else out
+}
+
+annotate_dtu_hits <- function(dtu_hits, gene_catalog) {
+  lookup <- gene_display_lookup(gene_catalog)
+  dtu_hits %>%
+    dplyr::select(-dplyr::any_of(c("group", "gene_name", "gene_display_label", "description"))) %>%
+    dplyr::left_join(lookup, by = c("gene_id" = "matched_gene_id")) %>%
+    dplyr::relocate(dplyr::any_of(c("group", "gene_name", "gene_display_label", "description")), .after = gene_id)
+}
+
+load_dtu_hits <- function(dtu_root, gene_catalog) {
+  empty_dtu <- tibble::tibble(
+    gene_id = character(),
+    transcript_id = character(),
+    variable = character(),
+    source_file = character(),
+    dtu_project = character(),
+    dtu_scope = character(),
+    max_level = character(),
+    min_level = character(),
+    delta_usage = numeric(),
+    pvalue = numeric(),
+    padj = numeric(),
+    method = character()
+  )
+  if (dtu_root == "" || !dir.exists(dtu_root)) return(empty_dtu)
+  files <- list.files(dtu_root, pattern = "dtu_significant\\.tsv(\\.gz)?$", recursive = TRUE, full.names = TRUE)
+  if (length(files) == 0) return(empty_dtu)
+  rows <- lapply(files, function(path) {
+    df <- tryCatch(readr::read_tsv(path, show_col_types = FALSE, col_types = cols(.default = col_character())), error = function(e) NULL)
+    if (is.null(df) || !"gene_id" %in% colnames(df)) return(NULL)
+    for (nm in c("transcript_id", "variable", "max_level", "min_level", "delta_usage", "pvalue", "padj", "method")) {
+      if (!nm %in% colnames(df)) df[[nm]] <- NA_character_
+    }
+    rel <- gsub("\\\\", "/", sub(paste0("^", normalizePath(dtu_root, winslash = "/", mustWork = FALSE), "/?"), "", normalizePath(path, winslash = "/", mustWork = FALSE)))
+    result_dir <- dirname(rel)
+    dtu_project_value <- if ("project" %in% colnames(df)) df$project else ifelse(result_dir %in% c(".", ""), "unknown", sub("/.*$", "", result_dir))
+    dtu_scope_value <- if ("scope" %in% colnames(df)) df$scope else ifelse(dtu_project_value == "all_projects", "all_projects", "project")
+    df %>%
+      dplyr::mutate(
+        source_file = rel,
+        dtu_project = dtu_project_value,
+        dtu_scope = dtu_scope_value,
+        delta_usage = suppressWarnings(as.numeric(delta_usage)),
+        pvalue = suppressWarnings(as.numeric(pvalue)),
+        padj = suppressWarnings(as.numeric(padj))
+      ) %>%
+      dplyr::filter(gene_id %in% gene_catalog$matched_gene_id)
+  })
+  out <- dplyr::bind_rows(rows)
+  if (nrow(out) == 0) empty_dtu else out
+}
+
+annotate_splicing_hits <- function(splicing_hits, gene_catalog) {
+  lookup <- gene_display_lookup(gene_catalog)
+  splicing_hits %>%
+    dplyr::select(-dplyr::any_of(c("group", "gene_name", "gene_display_label", "description"))) %>%
+    dplyr::left_join(lookup, by = c("gene_id" = "matched_gene_id")) %>%
+    dplyr::relocate(dplyr::any_of(c("group", "gene_name", "gene_display_label", "description")), .after = gene_id)
+}
+
+load_splicing_hits <- function(splicing_root, gene_catalog) {
+  empty_splicing <- tibble::tibble(
+    gene_id = character(),
+    event_type = character(),
+    source_file = character(),
+    splicing_project = character(),
+    splicing_variable = character(),
+    splicing_contrast = character(),
+    FDR = numeric(),
+    IncLevelDifference = numeric()
+  )
+  if (splicing_root == "" || !dir.exists(splicing_root)) return(empty_splicing)
+  files <- list.files(splicing_root, pattern = "significant_events\\.tsv(\\.gz)?$", recursive = TRUE, full.names = TRUE)
+  if (length(files) == 0) return(empty_splicing)
+
+  catalog_ids <- gene_catalog$matched_gene_id
+  catalog_names <- gene_catalog %>%
+    dplyr::filter(!is.na(gene_name), gene_name != "") %>%
+    dplyr::select(matched_gene_id, gene_name) %>%
+    dplyr::distinct()
+
+  normalize_gene_id <- function(x) {
+    x <- as.character(x)
+    x <- gsub("^gene:", "", x)
+    x <- gsub("\\.[0-9]+$", "", x)
+    x
+  }
+
+  rows <- lapply(files, function(path) {
+    df <- tryCatch(readr::read_tsv(path, show_col_types = FALSE, col_types = cols(.default = col_character())), error = function(e) NULL)
+    if (is.null(df) || nrow(df) == 0) return(NULL)
+    gene_col <- intersect(c("GeneID", "gene_id", "geneID"), colnames(df))[1]
+    symbol_col <- intersect(c("geneSymbol", "gene_name", "symbol"), colnames(df))[1]
+    if (is.na(gene_col) && is.na(symbol_col)) return(NULL)
+    if (!"FDR" %in% colnames(df)) df$FDR <- NA_character_
+    if (!"IncLevelDifference" %in% colnames(df)) df$IncLevelDifference <- NA_character_
+    if (!"event_type" %in% colnames(df)) df$event_type <- "unknown"
+
+    event_gene_id <- if (!is.na(gene_col)) normalize_gene_id(df[[gene_col]]) else rep("", nrow(df))
+    event_gene_symbol <- if (!is.na(symbol_col)) as.character(df[[symbol_col]]) else rep("", nrow(df))
+    by_id <- event_gene_id %in% catalog_ids
+    by_symbol_match <- match(event_gene_symbol, catalog_names$gene_name)
+    by_symbol <- !is.na(by_symbol_match)
+    matched_gene <- ifelse(by_id, event_gene_id, ifelse(by_symbol, catalog_names$matched_gene_id[by_symbol_match], NA_character_))
+
+    rel <- gsub("\\\\", "/", sub(paste0("^", normalizePath(splicing_root, winslash = "/", mustWork = FALSE), "/?"), "", normalizePath(path, winslash = "/", mustWork = FALSE)))
+    parts <- strsplit(dirname(rel), "/", fixed = TRUE)[[1]]
+    splicing_project <- ifelse(length(parts) >= 1, parts[1], "unknown")
+    splicing_variable <- ifelse(length(parts) >= 2, parts[2], "unknown")
+    splicing_contrast <- ifelse(length(parts) >= 3, parts[3], "unknown")
+
+    df %>%
+      dplyr::mutate(
+        gene_id = matched_gene,
+        source_file = rel,
+        splicing_project = splicing_project,
+        splicing_variable = splicing_variable,
+        splicing_contrast = splicing_contrast,
+        FDR = suppressWarnings(as.numeric(FDR)),
+        IncLevelDifference = suppressWarnings(as.numeric(IncLevelDifference))
+      ) %>%
+      dplyr::filter(!is.na(gene_id), gene_id != "")
+  })
+  out <- dplyr::bind_rows(rows)
+  if (nrow(out) == 0) empty_splicing else out
 }
 
 complete_sample_fields <- function(samples) {
@@ -457,6 +610,7 @@ summarise_gene_descriptives <- function(expr_long, expr_summary, deg_hits, gene_
       max_TPM = max(TPM, na.rm = TRUE),
       fraction_samples_TPM_gt1 = mean(TPM > 1, na.rm = TRUE),
       n_datasets = dplyr::n_distinct(dataset),
+      datasets = paste(sort(unique(dataset)), collapse = "; "),
       n_batches = dplyr::n_distinct(batch),
       n_tissues = dplyr::n_distinct(tissue),
       .groups = "drop"
@@ -473,6 +627,7 @@ summarise_gene_descriptives <- function(expr_long, expr_summary, deg_hits, gene_
         n_deg_records = dplyr::n(),
         n_significant_contrasts = sum(significant, na.rm = TRUE),
         n_deg_projects = dplyr::n_distinct(deg_project),
+        deg_projects = paste(sort(unique(deg_project)), collapse = "; "),
         n_deg_modes = dplyr::n_distinct(deg_mode),
         max_abs_log2FC = suppressWarnings(max(abs(log2FoldChange_num), na.rm = TRUE)),
         min_padj = suppressWarnings(min(padj_num, na.rm = TRUE)),
@@ -488,6 +643,7 @@ summarise_gene_descriptives <- function(expr_long, expr_summary, deg_hits, gene_
       n_deg_records = integer(),
       n_significant_contrasts = integer(),
       n_deg_projects = integer(),
+      deg_projects = character(),
       n_deg_modes = integer(),
       max_abs_log2FC = numeric(),
       min_padj = numeric()
@@ -502,7 +658,74 @@ summarise_gene_descriptives <- function(expr_long, expr_summary, deg_hits, gene_
     dplyr::mutate(
       dplyr::across(c(n_deg_records, n_significant_contrasts, n_deg_projects, n_deg_modes), ~ ifelse(is.na(.x), 0, .x))
     ) %>%
+    dplyr::mutate(
+      datasets = ifelse(is.na(datasets), "", datasets),
+      deg_projects = ifelse(is.na(deg_projects), "", deg_projects)
+    ) %>%
     dplyr::arrange(group, gene_name, gene_id)
+}
+
+add_optional_gene_summaries <- function(gene_summary, dtu_hits, splicing_hits) {
+  dtu_summary <- if (nrow(dtu_hits) > 0) {
+    dtu_hits %>%
+      dplyr::group_by(gene_id) %>%
+      dplyr::summarise(
+        n_dtu_records = dplyr::n(),
+        n_dtu_transcripts = dplyr::n_distinct(transcript_id),
+        dtu_projects = paste(sort(unique(dtu_project)), collapse = "; "),
+        min_dtu_padj = suppressWarnings(min(padj, na.rm = TRUE)),
+        max_delta_usage = suppressWarnings(max(delta_usage, na.rm = TRUE)),
+        .groups = "drop"
+      ) %>%
+      dplyr::mutate(
+        min_dtu_padj = ifelse(is.infinite(min_dtu_padj), NA_real_, min_dtu_padj),
+        max_delta_usage = ifelse(is.infinite(max_delta_usage), NA_real_, max_delta_usage)
+      )
+  } else {
+    tibble::tibble(
+      gene_id = character(),
+      n_dtu_records = integer(),
+      n_dtu_transcripts = integer(),
+      dtu_projects = character(),
+      min_dtu_padj = numeric(),
+      max_delta_usage = numeric()
+    )
+  }
+
+  splicing_summary <- if (nrow(splicing_hits) > 0) {
+    splicing_hits %>%
+      dplyr::group_by(gene_id) %>%
+      dplyr::summarise(
+        n_splicing_records = dplyr::n(),
+        n_splicing_event_types = dplyr::n_distinct(event_type),
+        splicing_projects = paste(sort(unique(splicing_project)), collapse = "; "),
+        min_splicing_fdr = suppressWarnings(min(FDR, na.rm = TRUE)),
+        max_abs_inc_level_difference = suppressWarnings(max(abs(IncLevelDifference), na.rm = TRUE)),
+        .groups = "drop"
+      ) %>%
+      dplyr::mutate(
+        min_splicing_fdr = ifelse(is.infinite(min_splicing_fdr), NA_real_, min_splicing_fdr),
+        max_abs_inc_level_difference = ifelse(is.infinite(max_abs_inc_level_difference), NA_real_, max_abs_inc_level_difference)
+      )
+  } else {
+    tibble::tibble(
+      gene_id = character(),
+      n_splicing_records = integer(),
+      n_splicing_event_types = integer(),
+      splicing_projects = character(),
+      min_splicing_fdr = numeric(),
+      max_abs_inc_level_difference = numeric()
+    )
+  }
+
+  gene_summary %>%
+    dplyr::left_join(dtu_summary, by = "gene_id") %>%
+    dplyr::left_join(splicing_summary, by = "gene_id") %>%
+    dplyr::mutate(
+      dplyr::across(c(n_dtu_records, n_dtu_transcripts, n_splicing_records, n_splicing_event_types), ~ ifelse(is.na(.x), 0, .x)),
+      dtu_projects = ifelse(is.na(dtu_projects), "", dtu_projects),
+      splicing_projects = ifelse(is.na(splicing_projects), "", splicing_projects)
+    )
 }
 
 heatmap_scale_mode <- function(mat) {
@@ -1018,18 +1241,35 @@ table_to_html <- function(df, max_rows = 30) {
   paste0("<div class='table-wrap'><table>", header, paste(rows, collapse = "\n"), "</table></div>")
 }
 
+figure_explanation <- function(caption) {
+  caption_l <- tolower(caption)
+  dplyr::case_when(
+    grepl("pca", caption_l) ~ "Resume a variacao entre amostras usando os genes exibidos. Separacoes por projeto podem indicar batch ou diferencas biologicas fortes.",
+    grepl("mds", caption_l) ~ "Mostra distancias entre amostras; pontos proximos tem perfis de expressao parecidos.",
+    grepl("correlacao", caption_l) ~ "Indica se genes variam juntos entre amostras. Correlacoes altas sugerem perfis coordenados.",
+    grepl("dotplot|fracao expressa", caption_l) ~ "Combina intensidade media de expressao com a proporcao de amostras em que o gene esta expresso.",
+    grepl("heatmap gene x amostra|amostra", caption_l) ~ "Mostra expressao por amostra individual, util para checar outliers e consistencia entre replicatas.",
+    grepl("heatmap|expressao media", caption_l) ~ "Resume expressao media por contexto; cores mais intensas indicam maior expressao relativa.",
+    grepl("batch|projeto", caption_l) ~ "Ajuda a avaliar se o sinal acompanha projeto ou batch, o que exige cautela na interpretacao biologica.",
+    grepl("deg|log2fc|contraste", caption_l) ~ "Resume efeitos diferenciais. log2FC indica direcao/tamanho do efeito e padj indica suporte estatistico.",
+    grepl("perfil agregado|perfil medio", caption_l) ~ "Mostra tendencias medias do grupo ao longo dos contextos disponiveis.",
+    TRUE ~ "Figura exploratoria para revisar padroes de expressao e consistencia dos resultados."
+  )
+}
+
 img_tag <- function(src, caption) {
   if (!file.exists(file.path(out_dir, src))) return("")
-  search_text <- paste(caption, src)
+  explanation <- figure_explanation(caption)
+  search_text <- paste(caption, explanation, src)
   paste0(
     "<figure class='searchable report-figure' data-kind='figure' data-search='", html_escape(tolower(search_text)), "'>",
     "<img src='", gsub("\\\\", "/", src), "' alt='", html_escape(caption), "'>",
-    "<figcaption><strong>", html_escape(caption), "</strong></figcaption>",
+    "<figcaption><strong>", html_escape(caption), "</strong><span>", html_escape(explanation), "</span></figcaption>",
     "</figure>"
   )
 }
 
-write_html_report <- function(path, title, catalog, gene_summary, deg_hits, global_plots, expression_unit = "TPM") {
+write_html_report <- function(path, title, catalog, gene_summary, deg_hits, dtu_hits, splicing_hits, global_plots, expression_unit = "TPM") {
   if (is.na(expression_unit) || expression_unit == "") expression_unit <- "TPM"
   n_found_genes <- catalog %>%
     dplyr::filter(found_in_expression_matrix %in% TRUE) %>%
@@ -1047,7 +1287,47 @@ write_html_report <- function(path, title, catalog, gene_summary, deg_hits, glob
   } else {
     0
   }
+  n_dtu_sig_genes <- if (nrow(dtu_hits) > 0) dtu_hits %>% dplyr::distinct(gene_id) %>% nrow() else 0
+  n_splicing_sig_genes <- if (nrow(splicing_hits) > 0) splicing_hits %>% dplyr::distinct(gene_id) %>% nrow() else 0
   generated_at <- format(Sys.time(), "%Y-%m-%d %H:%M")
+
+  split_projects <- function(x) {
+    x <- paste(x, collapse = "; ")
+    vals <- trimws(unlist(strsplit(x, ";", fixed = TRUE)))
+    vals <- vals[vals != "" & !is.na(vals)]
+    unique(vals)
+  }
+  projects_for_gene <- function(group, gene_id) {
+    summary_projects <- gene_summary %>%
+      dplyr::filter(.data$group == .env$group, .data$gene_id == .env$gene_id) %>%
+      dplyr::select(dplyr::any_of(c("datasets", "deg_projects", "dtu_projects", "splicing_projects")))
+    deg_projects <- deg_hits %>%
+      dplyr::filter(.data$gene_id == .env$gene_id) %>%
+      dplyr::pull(deg_project)
+    dtu_projects <- dtu_hits %>%
+      dplyr::filter(.data$gene_id == .env$gene_id) %>%
+      dplyr::pull(dtu_project)
+    splicing_projects <- splicing_hits %>%
+      dplyr::filter(.data$gene_id == .env$gene_id) %>%
+      dplyr::pull(splicing_project)
+    sort(unique(c(split_projects(unlist(summary_projects)), deg_projects, dtu_projects, splicing_projects)))
+  }
+  project_attr <- function(projects) {
+    projects <- projects[projects != "" & !is.na(projects)]
+    html_escape(paste(sort(unique(projects)), collapse = "|"))
+  }
+  all_projects <- sort(unique(c(
+    split_projects(gene_summary$datasets),
+    split_projects(gene_summary$deg_projects),
+    split_projects(gene_summary$dtu_projects),
+    split_projects(gene_summary$splicing_projects),
+    if (nrow(deg_hits) > 0) deg_hits$deg_project else character(),
+    if (nrow(dtu_hits) > 0) dtu_hits$dtu_project else character(),
+    if (nrow(splicing_hits) > 0) splicing_hits$splicing_project else character()
+  )))
+  project_options <- paste(vapply(all_projects, function(project) {
+    paste0("<option value='", html_escape(project), "'>", html_escape(project), "</option>")
+  }, character(1)), collapse = "")
 
   group_links <- paste(vapply(unique(catalog$group), function(grp) {
     paste0("<li><a href='#group_", sanitize(grp), "'>", html_escape(grp), "</a></li>")
@@ -1055,9 +1335,10 @@ write_html_report <- function(path, title, catalog, gene_summary, deg_hits, glob
 
   gene_index <- paste(vapply(seq_len(nrow(catalog)), function(i) {
     row <- catalog[i, ]
-    search_text <- paste(row$group, row$query, row$matched_gene_id, row$gene_name, row$gene_display_label, row$biotype, row$description, row$chromosome, row$location)
+    gene_projects <- projects_for_gene(row$group, row$matched_gene_id)
+    search_text <- paste(row$group, row$query, row$matched_gene_id, row$gene_name, row$gene_display_label, row$biotype, row$description, row$chromosome, row$location, paste(gene_projects, collapse = " "))
     paste0(
-      "<a class='searchable gene-chip' data-kind='gene' data-search='", html_escape(tolower(search_text)), "' href='#gene_", sanitize(row$group), "_", sanitize(row$matched_gene_id), "'>",
+      "<a class='searchable gene-chip' data-kind='gene' data-projects='", project_attr(gene_projects), "' data-search='", html_escape(tolower(search_text)), "' href='#gene_", sanitize(row$group), "_", sanitize(row$matched_gene_id), "'>",
       "<span>", html_escape(row$gene_display_label), "</span>",
       "<small>", html_escape(row$group), "</small>",
       "</a>"
@@ -1069,9 +1350,10 @@ write_html_report <- function(path, title, catalog, gene_summary, deg_hits, glob
     group_catalog <- catalog %>%
       dplyr::filter(group == grp) %>%
       dplyr::select(group, query, query_display, matched_gene_id, gene_name, gene_display_label, biotype, chromosome, gene_start, gene_end, strand, location, found_in_expression_matrix)
-    group_search <- paste(group_catalog$group, group_catalog$query, group_catalog$matched_gene_id, group_catalog$gene_name, group_catalog$gene_display_label, group_catalog$biotype, group_catalog$chromosome, group_catalog$location, collapse = " ")
+    group_projects <- sort(unique(unlist(lapply(group_catalog$matched_gene_id, function(gene_id) projects_for_gene(grp, gene_id)))))
+    group_search <- paste(group_catalog$group, group_catalog$query, group_catalog$matched_gene_id, group_catalog$gene_name, group_catalog$gene_display_label, group_catalog$biotype, group_catalog$chromosome, group_catalog$location, paste(group_projects, collapse = " "), collapse = " ")
     paste0(
-      "<section class='searchable group-section' data-kind='group' data-search='", html_escape(tolower(group_search)), "' id='group_", sanitize(grp), "'><h2>Grupo: ", html_escape(grp), "</h2>",
+      "<section class='searchable group-section' data-kind='group' data-projects='", project_attr(group_projects), "' data-search='", html_escape(tolower(group_search)), "' id='group_", sanitize(grp), "'><h2>Grupo: ", html_escape(grp), "</h2>",
       table_to_html(group_catalog, 100),
       img_tag(file.path(group_dir, "expression_heatmap.png"), "Expressao media por contexto biologico, projeto e batch"),
       img_tag(file.path(group_dir, "expression_dotplot.png"), "Media de expressao e fracao expressa por contexto"),
@@ -1097,9 +1379,18 @@ write_html_report <- function(path, title, catalog, gene_summary, deg_hits, glob
       dplyr::filter(gene_id == row$matched_gene_id) %>%
       dplyr::select(gene_display_label, deg_project, deg_mode, contrast, log2FoldChange_num, padj_num, significant) %>%
       dplyr::arrange(padj_num)
-    gene_search <- paste(row$group, row$query, row$matched_gene_id, row$gene_name, row$gene_display_label, row$biotype, row$description, row$chromosome, row$location, paste(deg_table$contrast, collapse = " "))
+    dtu_table <- dtu_hits %>%
+      dplyr::filter(gene_id == row$matched_gene_id) %>%
+      dplyr::select(gene_display_label, dtu_project, dtu_scope, variable, transcript_id, max_level, min_level, delta_usage, padj, method) %>%
+      dplyr::arrange(padj, dplyr::desc(delta_usage))
+    splicing_table <- splicing_hits %>%
+      dplyr::filter(gene_id == row$matched_gene_id) %>%
+      dplyr::select(gene_display_label, splicing_project, splicing_variable, splicing_contrast, event_type, FDR, IncLevelDifference) %>%
+      dplyr::arrange(FDR, dplyr::desc(abs(IncLevelDifference)))
+    gene_projects <- projects_for_gene(row$group, row$matched_gene_id)
+    gene_search <- paste(row$group, row$query, row$matched_gene_id, row$gene_name, row$gene_display_label, row$biotype, row$description, row$chromosome, row$location, paste(gene_projects, collapse = " "), paste(deg_table$contrast, collapse = " "), paste(dtu_table$transcript_id, collapse = " "), paste(splicing_table$splicing_contrast, collapse = " "))
     paste0(
-      "<section class='searchable gene' data-kind='gene' data-search='", html_escape(tolower(gene_search)), "' id='gene_", sanitize(row$group), "_", sanitize(row$matched_gene_id), "'>",
+      "<section class='searchable gene' data-kind='gene' data-projects='", project_attr(gene_projects), "' data-search='", html_escape(tolower(gene_search)), "' id='gene_", sanitize(row$group), "_", sanitize(row$matched_gene_id), "'>",
       "<h3>", html_escape(row$gene_display_label), "</h3>",
       "<p><b>Grupo:</b> ", html_escape(row$group),
       " | <b>Query:</b> ", html_escape(row$query),
@@ -1115,6 +1406,10 @@ write_html_report <- function(path, title, catalog, gene_summary, deg_hits, glob
       img_tag(file.path(gene_dir, "deg_scatter.png"), "log2FC versus -log10(padj) nos contrastes DEG"),
       "<h4>DEG do gene</h4>",
       table_to_html(deg_table, 50),
+      "<h4>DTU do gene</h4>",
+      table_to_html(dtu_table, 50),
+      "<h4>Splicing do gene</h4>",
+      table_to_html(splicing_table, 50),
       "</section>"
     )
   }, character(1)), collapse = "\n")
@@ -1154,6 +1449,7 @@ write_html_report <- function(path, title, catalog, gene_summary, deg_hits, glob
     "<script>
       document.addEventListener('DOMContentLoaded', function(){
         var input = document.getElementById('geneSearch');
+        var projectSelect = document.getElementById('projectFilter');
         var count = document.getElementById('searchCount');
         var toggles = Array.prototype.slice.call(document.querySelectorAll('[data-filter-kind]'));
         var items = Array.prototype.slice.call(document.querySelectorAll('.searchable'));
@@ -1162,14 +1458,17 @@ write_html_report <- function(path, title, catalog, gene_summary, deg_hits, glob
         }
         function applySearch(){
           var query = (input.value || '').trim().toLowerCase();
+          var project = projectSelect ? projectSelect.value : 'all';
           var kinds = activeKinds();
           var visible = 0;
           items.forEach(function(el){
             var kind = el.getAttribute('data-kind') || '';
             var text = el.getAttribute('data-search') || el.textContent.toLowerCase();
+            var projects = el.getAttribute('data-projects') || '';
             var kindOk = kind === '' || kinds.indexOf(kind) !== -1;
             var queryOk = query === '' || text.indexOf(query) !== -1;
-            var show = kindOk && queryOk;
+            var projectOk = project === 'all' || projects === '' || projects.split('|').indexOf(project) !== -1;
+            var show = kindOk && queryOk && projectOk;
             el.classList.toggle('hidden-by-search', !show);
             if (show && kind !== '') visible += 1;
           });
@@ -1179,9 +1478,10 @@ write_html_report <- function(path, title, catalog, gene_summary, deg_hits, glob
               if (parent) parent.classList.remove('hidden-by-search');
             }
           });
-          count.textContent = query === '' ? 'Filtro inativo.' : visible + ' itens encontrados para \"' + query + '\".';
+          count.textContent = query === '' && project === 'all' ? 'Filtro inativo.' : visible + ' itens encontrados.';
         }
         input.addEventListener('input', applySearch);
+        if (projectSelect) projectSelect.addEventListener('change', applySearch);
         toggles.forEach(function(t){t.addEventListener('change', applySearch);});
         applySearch();
       });
@@ -1192,6 +1492,7 @@ write_html_report <- function(path, title, catalog, gene_summary, deg_hits, glob
     "<div class='toolbar' role='search'>",
     "<input id='geneSearch' type='search' placeholder='Buscar por gene, ID, grupo, biotipo, descricao ou contraste'>",
     "<div class='filters'>",
+    "<label>Projeto <select id='projectFilter'><option value='all'>Todos</option>", project_options, "</select></label>",
     "<label><input type='checkbox' data-filter-kind='gene' checked>Genes</label>",
     "<label><input type='checkbox' data-filter-kind='group' checked>Grupos</label>",
     "<label><input type='checkbox' data-filter-kind='figure' checked>Figuras</label>",
@@ -1207,6 +1508,8 @@ write_html_report <- function(path, title, catalog, gene_summary, deg_hits, glob
     paste0("<div class='card'><div class='num'>", n_annotated_genes, "</div><div>genes anotados</div></div>"),
     paste0("<div class='card'><div class='num'>", length(unique(catalog$group)), "</div><div>grupos</div></div>"),
     paste0("<div class='card'><div class='num'>", n_deg_sig_genes, "</div><div>genes com DEG significativo</div></div>"),
+    paste0("<div class='card'><div class='num'>", n_dtu_sig_genes, "</div><div>genes com DTU significativo</div></div>"),
+    paste0("<div class='card'><div class='num'>", n_splicing_sig_genes, "</div><div>genes com splicing significativo</div></div>"),
     paste0("<div class='card'><div class='num text'>", html_escape(generated_at), "</div><div>gerado em</div></div>"),
     "</div>",
     "<div class='gene-index'>", gene_index, "</div>",
@@ -1227,7 +1530,7 @@ write_html_report <- function(path, title, catalog, gene_summary, deg_hits, glob
     "<section id='groups'><h2>Grupos</h2><ul>", group_links, "</ul>", group_sections, "</section>",
     "<section id='genes'><h2>Genes individuais</h2>", gene_sections, "</section>",
     "<section id='tables'><h2>Tabelas</h2>",
-    "<p>Arquivos completos: <code>tables/gene_catalog.tsv</code>, <code>tables/gene_expression_summary.tsv</code>, <code>tables/expression_long.tsv</code>, <code>tables/expression_summary_by_context.tsv</code> e <code>tables/deg_hits.tsv</code>.</p>",
+    paste0("<p>Arquivos completos: <code>", html_escape(add_table_suffix("tables/gene_catalog.tsv")), "</code>, <code>", html_escape(add_table_suffix("tables/gene_expression_summary.tsv")), "</code>, <code>", html_escape(add_table_suffix("tables/expression_long.tsv")), "</code>, <code>", html_escape(add_table_suffix("tables/expression_summary_by_context.tsv")), "</code>, <code>", html_escape(add_table_suffix("tables/deg_hits.tsv")), "</code>, <code>", html_escape(add_table_suffix("tables/dtu_hits.tsv")), "</code> e <code>", html_escape(add_table_suffix("tables/splicing_hits.tsv")), "</code>.</p>"),
     table_to_html(gene_summary, 100),
     "</section>",
     "</body></html>"
@@ -1257,12 +1560,19 @@ expr_long <- make_expression_long(tpm, samples, gene_catalog)
 expr_summary <- summarise_expression(expr_long)
 deg_hits <- load_deg_hits(deg_root, gene_catalog)
 deg_hits_annotated <- annotate_deg_hits(deg_hits, gene_catalog)
+dtu_hits <- load_dtu_hits(dtu_root, gene_catalog)
+dtu_hits_annotated <- annotate_dtu_hits(dtu_hits, gene_catalog)
+splicing_hits <- load_splicing_hits(splicing_root, gene_catalog)
+splicing_hits_annotated <- annotate_splicing_hits(splicing_hits, gene_catalog)
 gene_summary <- summarise_gene_descriptives(expr_long, expr_summary, deg_hits, gene_catalog)
+gene_summary <- add_optional_gene_summaries(gene_summary, dtu_hits, splicing_hits)
 
 write_tsv2(gene_catalog, file.path(out_dir, "tables", "gene_catalog.tsv"))
 write_tsv2(expr_long, file.path(out_dir, "tables", "expression_long.tsv"))
 write_tsv2(expr_summary, file.path(out_dir, "tables", "expression_summary_by_context.tsv"))
 write_tsv2(deg_hits_annotated, file.path(out_dir, "tables", "deg_hits.tsv"))
+write_tsv2(dtu_hits_annotated, file.path(out_dir, "tables", "dtu_hits.tsv"))
+write_tsv2(splicing_hits_annotated, file.path(out_dir, "tables", "splicing_hits.tsv"))
 write_tsv2(gene_summary, file.path(out_dir, "tables", "gene_expression_summary.tsv"))
 
 global_plots <- list(
@@ -1297,5 +1607,5 @@ invisible(plot_or_skip("global DEG direction", function() plot_deg_direction_sum
 plot_group_outputs(expr_long, expr_summary, deg_hits, gene_catalog, out_dir)
 plot_gene_outputs(expr_long, deg_hits, out_dir)
 
-write_html_report(file.path(out_dir, "gene_set_report.html"), report_title, gene_catalog, gene_summary, deg_hits_annotated, global_plots, expression_unit)
+write_html_report(file.path(out_dir, "gene_set_report.html"), report_title, gene_catalog, gene_summary, deg_hits_annotated, dtu_hits_annotated, splicing_hits_annotated, global_plots, expression_unit)
 log_info(paste("[OK] Relatorio 090 concluido:", file.path(out_dir, "gene_set_report.html")))
