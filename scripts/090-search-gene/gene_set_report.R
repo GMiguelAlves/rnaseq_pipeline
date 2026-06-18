@@ -27,6 +27,8 @@ metadata_file <- get_arg("--metadata", Sys.getenv("METADATA_FINAL_NEW", unset = 
 deg_root <- get_arg("--deg-root", Sys.getenv("DEG_DIR", unset = "../060-deg-analysis"))
 dtu_root <- get_arg("--dtu-root", Sys.getenv("DTU_DIR", unset = "../070-dtu-analysis"))
 splicing_root <- get_arg("--splicing-root", Sys.getenv("SPLICING_DIR", unset = "../080-splicing"))
+wgcna_root <- get_arg("--wgcna-root", Sys.getenv("WGCNA_DIR", unset = "../085-wgcna"))
+mfuzz_root <- get_arg("--mfuzz-root", Sys.getenv("MFUZZ_DIR", unset = "../086-mfuzz"))
 gff_file <- get_arg("--gff", Sys.getenv("GENE_REPORT_ANNOTATION_FILE", unset = Sys.getenv("REF_GFF3", unset = "")))
 out_dir <- get_arg("--output-dir", file.path(Sys.getenv("GENE_REPORT_DIR", unset = "."), "results"))
 report_title <- get_arg("--title", "Relatorio exploratorio de genes")
@@ -427,7 +429,7 @@ annotate_dtu_hits <- function(dtu_hits, gene_catalog) {
     dplyr::relocate(dplyr::any_of(c("group", "gene_name", "gene_display_label", "description")), .after = gene_id)
 }
 
-load_dtu_hits <- function(dtu_root, gene_catalog) {
+load_dtu_hits <- function(dtu_root, gene_catalog = NULL) {
   empty_dtu <- tibble::tibble(
     gene_id = character(),
     transcript_id = character(),
@@ -455,6 +457,8 @@ load_dtu_hits <- function(dtu_root, gene_catalog) {
     result_dir <- dirname(rel)
     dtu_project_value <- if ("project" %in% colnames(df)) df$project else ifelse(result_dir %in% c(".", ""), "unknown", sub("/.*$", "", result_dir))
     dtu_scope_value <- if ("scope" %in% colnames(df)) df$scope else ifelse(dtu_project_value == "all_projects", "all_projects", "project")
+    # Keep all significant DTU hits. Gene-level sections filter against the
+    # report catalog later, so the overview can still reflect the global DTU run.
     df %>%
       dplyr::mutate(
         source_file = rel,
@@ -463,8 +467,7 @@ load_dtu_hits <- function(dtu_root, gene_catalog) {
         delta_usage = suppressWarnings(as.numeric(delta_usage)),
         pvalue = suppressWarnings(as.numeric(pvalue)),
         padj = suppressWarnings(as.numeric(padj))
-      ) %>%
-      dplyr::filter(gene_id %in% gene_catalog$matched_gene_id)
+      )
   })
   out <- dplyr::bind_rows(rows)
   if (nrow(out) == 0) empty_dtu else out
@@ -543,6 +546,148 @@ load_splicing_hits <- function(splicing_root, gene_catalog) {
   })
   out <- dplyr::bind_rows(rows)
   if (nrow(out) == 0) empty_splicing else out
+}
+
+annotate_wgcna_hits <- function(wgcna_hits, gene_catalog) {
+  lookup <- gene_display_lookup(gene_catalog)
+  wgcna_hits %>%
+    dplyr::select(-dplyr::any_of(c("group", "gene_name", "gene_display_label", "description"))) %>%
+    dplyr::left_join(lookup, by = c("gene_id" = "matched_gene_id")) %>%
+    dplyr::relocate(dplyr::any_of(c("group", "gene_name", "gene_display_label", "description")), .after = gene_id)
+}
+
+load_wgcna_hits <- function(wgcna_root, gene_catalog) {
+  empty_wgcna <- tibble::tibble(
+    gene_id = character(),
+    source_file = character(),
+    wgcna_project = character(),
+    wgcna_scope = character(),
+    module_color = character(),
+    module_label = integer(),
+    is_hub = logical(),
+    kME = numeric(),
+    abs_kME = numeric(),
+    module_rank = integer()
+  )
+  if (wgcna_root == "" || !dir.exists(wgcna_root)) return(empty_wgcna)
+
+  root_norm <- normalizePath(wgcna_root, winslash = "/", mustWork = FALSE)
+  project_from_path <- function(path) {
+    rel <- gsub("\\\\", "/", sub(paste0("^", root_norm, "/?"), "", normalizePath(path, winslash = "/", mustWork = FALSE)))
+    parts <- strsplit(dirname(rel), "/", fixed = TRUE)[[1]]
+    ifelse(length(parts) >= 1 && parts[1] != ".", parts[1], "unknown")
+  }
+  rel_from_path <- function(path) {
+    gsub("\\\\", "/", sub(paste0("^", root_norm, "/?"), "", normalizePath(path, winslash = "/", mustWork = FALSE)))
+  }
+
+  assignment_files <- list.files(wgcna_root, pattern = "module_assignments\\.tsv(\\.gz)?$", recursive = TRUE, full.names = TRUE)
+  assignment_rows <- lapply(assignment_files, function(path) {
+    df <- tryCatch(readr::read_tsv(path, show_col_types = FALSE, col_types = cols(.default = col_character())), error = function(e) NULL)
+    if (is.null(df) || !"gene_id" %in% colnames(df)) return(NULL)
+    if (!"module_color" %in% colnames(df)) df$module_color <- NA_character_
+    if (!"module_label" %in% colnames(df)) df$module_label <- NA_character_
+    project <- project_from_path(path)
+    df %>%
+      dplyr::filter(gene_id %in% gene_catalog$matched_gene_id) %>%
+      dplyr::transmute(
+        gene_id = gene_id,
+        source_file = rel_from_path(path),
+        wgcna_project = project,
+        wgcna_scope = ifelse(project == "all_projects", "all_projects", "project"),
+        module_color = module_color,
+        module_label = suppressWarnings(as.integer(module_label))
+      )
+  })
+  assignments <- dplyr::bind_rows(assignment_rows)
+
+  hub_files <- list.files(wgcna_root, pattern = "hub_genes\\.tsv(\\.gz)?$", recursive = TRUE, full.names = TRUE)
+  hub_rows <- lapply(hub_files, function(path) {
+    df <- tryCatch(readr::read_tsv(path, show_col_types = FALSE, col_types = cols(.default = col_character())), error = function(e) NULL)
+    if (is.null(df) || !"gene_id" %in% colnames(df)) return(NULL)
+    for (nm in c("module_color", "kME", "abs_kME", "module_rank")) {
+      if (!nm %in% colnames(df)) df[[nm]] <- NA_character_
+    }
+    project <- project_from_path(path)
+    df %>%
+      dplyr::filter(gene_id %in% gene_catalog$matched_gene_id) %>%
+      dplyr::transmute(
+        gene_id = gene_id,
+        wgcna_project = project,
+        module_color = module_color,
+        kME = suppressWarnings(as.numeric(kME)),
+        abs_kME = suppressWarnings(as.numeric(abs_kME)),
+        module_rank = suppressWarnings(as.integer(module_rank))
+      )
+  })
+  hubs <- dplyr::bind_rows(hub_rows)
+
+  if (nrow(assignments) == 0 && nrow(hubs) == 0) return(empty_wgcna)
+  if (nrow(assignments) == 0) {
+    out <- hubs %>%
+      dplyr::mutate(
+        source_file = "",
+        wgcna_scope = ifelse(wgcna_project == "all_projects", "all_projects", "project"),
+        module_label = NA_integer_,
+        is_hub = TRUE
+      ) %>%
+      dplyr::select(gene_id, source_file, wgcna_project, wgcna_scope, module_color, module_label, is_hub, kME, abs_kME, module_rank)
+    return(out)
+  }
+
+  out <- assignments %>%
+    dplyr::left_join(hubs, by = c("gene_id", "wgcna_project", "module_color")) %>%
+    dplyr::mutate(
+      is_hub = !is.na(module_rank),
+      kME = suppressWarnings(as.numeric(kME)),
+      abs_kME = suppressWarnings(as.numeric(abs_kME)),
+      module_rank = suppressWarnings(as.integer(module_rank))
+    ) %>%
+    dplyr::arrange(wgcna_project, module_color, module_rank, gene_id)
+  if (nrow(out) == 0) empty_wgcna else out
+}
+
+annotate_mfuzz_hits <- function(mfuzz_hits, gene_catalog) {
+  lookup <- gene_display_lookup(gene_catalog)
+  mfuzz_hits %>%
+    dplyr::select(-dplyr::any_of(c("group", "gene_name", "gene_display_label", "description"))) %>%
+    dplyr::left_join(lookup, by = c("gene_id" = "matched_gene_id")) %>%
+    dplyr::relocate(dplyr::any_of(c("group", "gene_name", "gene_display_label", "description")), .after = gene_id)
+}
+
+load_mfuzz_hits <- function(mfuzz_root, gene_catalog) {
+  empty_mfuzz <- tibble::tibble(
+    gene_id = character(),
+    source_file = character(),
+    mfuzz_project = character(),
+    mfuzz_scope = character(),
+    cluster = integer(),
+    membership = numeric()
+  )
+  if (mfuzz_root == "" || !dir.exists(mfuzz_root)) return(empty_mfuzz)
+  root_norm <- normalizePath(mfuzz_root, winslash = "/", mustWork = FALSE)
+  files <- list.files(mfuzz_root, pattern = "mfuzz_membership\\.tsv(\\.gz)?$", recursive = TRUE, full.names = TRUE)
+  if (length(files) == 0) return(empty_mfuzz)
+  rows <- lapply(files, function(path) {
+    df <- tryCatch(readr::read_tsv(path, show_col_types = FALSE, col_types = cols(.default = col_character())), error = function(e) NULL)
+    if (is.null(df) || !"gene_id" %in% colnames(df)) return(NULL)
+    if (!"cluster" %in% colnames(df)) df$cluster <- NA_character_
+    if (!"membership" %in% colnames(df)) df$membership <- NA_character_
+    rel <- gsub("\\\\", "/", sub(paste0("^", root_norm, "/?"), "", normalizePath(path, winslash = "/", mustWork = FALSE)))
+    parts <- strsplit(dirname(rel), "/", fixed = TRUE)[[1]]
+    project <- ifelse(length(parts) >= 1 && parts[1] != ".", parts[1], "unknown")
+    df %>%
+      dplyr::filter(gene_id %in% gene_catalog$matched_gene_id) %>%
+      dplyr::mutate(
+        source_file = rel,
+        mfuzz_project = project,
+        mfuzz_scope = ifelse(project == "all_projects", "all_projects", "project"),
+        cluster = suppressWarnings(as.integer(cluster)),
+        membership = suppressWarnings(as.numeric(membership))
+      )
+  })
+  out <- dplyr::bind_rows(rows)
+  if (nrow(out) == 0) empty_mfuzz else out
 }
 
 complete_sample_fields <- function(samples) {
@@ -665,7 +810,7 @@ summarise_gene_descriptives <- function(expr_long, expr_summary, deg_hits, gene_
     dplyr::arrange(group, gene_name, gene_id)
 }
 
-add_optional_gene_summaries <- function(gene_summary, dtu_hits, splicing_hits) {
+add_optional_gene_summaries <- function(gene_summary, dtu_hits, splicing_hits, wgcna_hits, mfuzz_hits) {
   dtu_summary <- if (nrow(dtu_hits) > 0) {
     dtu_hits %>%
       dplyr::group_by(gene_id) %>%
@@ -718,13 +863,67 @@ add_optional_gene_summaries <- function(gene_summary, dtu_hits, splicing_hits) {
     )
   }
 
+  wgcna_summary <- if (nrow(wgcna_hits) > 0) {
+    wgcna_hits %>%
+      dplyr::group_by(gene_id) %>%
+      dplyr::summarise(
+        n_wgcna_records = dplyr::n(),
+        n_wgcna_modules = dplyr::n_distinct(paste(wgcna_project, module_color, sep = "::")),
+        n_wgcna_hub_records = sum(is_hub, na.rm = TRUE),
+        wgcna_projects = paste(sort(unique(wgcna_project)), collapse = "; "),
+        wgcna_modules = paste(sort(unique(module_color[!is.na(module_color) & module_color != ""])), collapse = "; "),
+        max_abs_kME = suppressWarnings(max(abs_kME, na.rm = TRUE)),
+        .groups = "drop"
+      ) %>%
+      dplyr::mutate(max_abs_kME = ifelse(is.infinite(max_abs_kME), NA_real_, max_abs_kME))
+  } else {
+    tibble::tibble(
+      gene_id = character(),
+      n_wgcna_records = integer(),
+      n_wgcna_modules = integer(),
+      n_wgcna_hub_records = integer(),
+      wgcna_projects = character(),
+      wgcna_modules = character(),
+      max_abs_kME = numeric()
+    )
+  }
+
+  mfuzz_summary <- if (nrow(mfuzz_hits) > 0) {
+    mfuzz_hits %>%
+      dplyr::group_by(gene_id) %>%
+      dplyr::summarise(
+        n_mfuzz_records = dplyr::n(),
+        n_mfuzz_clusters = dplyr::n_distinct(paste(mfuzz_project, cluster, sep = "::")),
+        mfuzz_projects = paste(sort(unique(mfuzz_project)), collapse = "; "),
+        mfuzz_clusters = paste(sort(unique(cluster[!is.na(cluster)])), collapse = "; "),
+        max_mfuzz_membership = suppressWarnings(max(membership, na.rm = TRUE)),
+        .groups = "drop"
+      ) %>%
+      dplyr::mutate(max_mfuzz_membership = ifelse(is.infinite(max_mfuzz_membership), NA_real_, max_mfuzz_membership))
+  } else {
+    tibble::tibble(
+      gene_id = character(),
+      n_mfuzz_records = integer(),
+      n_mfuzz_clusters = integer(),
+      mfuzz_projects = character(),
+      mfuzz_clusters = character(),
+      max_mfuzz_membership = numeric()
+    )
+  }
+
   gene_summary %>%
     dplyr::left_join(dtu_summary, by = "gene_id") %>%
     dplyr::left_join(splicing_summary, by = "gene_id") %>%
+    dplyr::left_join(wgcna_summary, by = "gene_id") %>%
+    dplyr::left_join(mfuzz_summary, by = "gene_id") %>%
     dplyr::mutate(
-      dplyr::across(c(n_dtu_records, n_dtu_transcripts, n_splicing_records, n_splicing_event_types), ~ ifelse(is.na(.x), 0, .x)),
+      dplyr::across(c(n_dtu_records, n_dtu_transcripts, n_splicing_records, n_splicing_event_types, n_wgcna_records, n_wgcna_modules, n_wgcna_hub_records, n_mfuzz_records, n_mfuzz_clusters), ~ ifelse(is.na(.x), 0, .x)),
       dtu_projects = ifelse(is.na(dtu_projects), "", dtu_projects),
-      splicing_projects = ifelse(is.na(splicing_projects), "", splicing_projects)
+      splicing_projects = ifelse(is.na(splicing_projects), "", splicing_projects),
+      wgcna_projects = ifelse(is.na(wgcna_projects), "", wgcna_projects),
+      wgcna_modules = ifelse(is.na(wgcna_modules), "", wgcna_modules),
+      mfuzz_projects = ifelse(is.na(mfuzz_projects), "", mfuzz_projects),
+      mfuzz_clusters = ifelse(is.na(mfuzz_clusters), "", mfuzz_clusters)
     )
 }
 
@@ -1269,7 +1468,7 @@ img_tag <- function(src, caption) {
   )
 }
 
-write_html_report <- function(path, title, catalog, gene_summary, deg_hits, dtu_hits, splicing_hits, global_plots, expression_unit = "TPM") {
+write_html_report <- function(path, title, catalog, gene_summary, deg_hits, dtu_hits, splicing_hits, wgcna_hits, mfuzz_hits, global_plots, expression_unit = "TPM") {
   if (is.na(expression_unit) || expression_unit == "") expression_unit <- "TPM"
   n_found_genes <- catalog %>%
     dplyr::filter(found_in_expression_matrix %in% TRUE) %>%
@@ -1288,7 +1487,19 @@ write_html_report <- function(path, title, catalog, gene_summary, deg_hits, dtu_
     0
   }
   n_dtu_sig_genes <- if (nrow(dtu_hits) > 0) dtu_hits %>% dplyr::distinct(gene_id) %>% nrow() else 0
+  n_dtu_sig_transcripts <- if (nrow(dtu_hits) > 0) dtu_hits %>% dplyr::distinct(gene_id, transcript_id) %>% nrow() else 0
+  n_dtu_report_genes <- if (nrow(dtu_hits) > 0) {
+    dtu_hits %>%
+      dplyr::filter(gene_id %in% catalog$matched_gene_id) %>%
+      dplyr::distinct(gene_id) %>%
+      nrow()
+  } else {
+    0
+  }
   n_splicing_sig_genes <- if (nrow(splicing_hits) > 0) splicing_hits %>% dplyr::distinct(gene_id) %>% nrow() else 0
+  n_wgcna_genes <- if (nrow(wgcna_hits) > 0) wgcna_hits %>% dplyr::distinct(gene_id) %>% nrow() else 0
+  n_wgcna_hub_genes <- if (nrow(wgcna_hits) > 0) wgcna_hits %>% dplyr::filter(is_hub %in% TRUE) %>% dplyr::distinct(gene_id) %>% nrow() else 0
+  n_mfuzz_genes <- if (nrow(mfuzz_hits) > 0) mfuzz_hits %>% dplyr::distinct(gene_id) %>% nrow() else 0
   generated_at <- format(Sys.time(), "%Y-%m-%d %H:%M")
 
   split_projects <- function(x) {
@@ -1300,7 +1511,7 @@ write_html_report <- function(path, title, catalog, gene_summary, deg_hits, dtu_
   projects_for_gene <- function(group, gene_id) {
     summary_projects <- gene_summary %>%
       dplyr::filter(.data$group == .env$group, .data$gene_id == .env$gene_id) %>%
-      dplyr::select(dplyr::any_of(c("datasets", "deg_projects", "dtu_projects", "splicing_projects")))
+      dplyr::select(dplyr::any_of(c("datasets", "deg_projects", "dtu_projects", "splicing_projects", "wgcna_projects", "mfuzz_projects")))
     deg_projects <- deg_hits %>%
       dplyr::filter(.data$gene_id == .env$gene_id) %>%
       dplyr::pull(deg_project)
@@ -1310,7 +1521,13 @@ write_html_report <- function(path, title, catalog, gene_summary, deg_hits, dtu_
     splicing_projects <- splicing_hits %>%
       dplyr::filter(.data$gene_id == .env$gene_id) %>%
       dplyr::pull(splicing_project)
-    sort(unique(c(split_projects(unlist(summary_projects)), deg_projects, dtu_projects, splicing_projects)))
+    wgcna_projects <- wgcna_hits %>%
+      dplyr::filter(.data$gene_id == .env$gene_id) %>%
+      dplyr::pull(wgcna_project)
+    mfuzz_projects <- mfuzz_hits %>%
+      dplyr::filter(.data$gene_id == .env$gene_id) %>%
+      dplyr::pull(mfuzz_project)
+    sort(unique(c(split_projects(unlist(summary_projects)), deg_projects, dtu_projects, splicing_projects, wgcna_projects, mfuzz_projects)))
   }
   project_attr <- function(projects) {
     projects <- projects[projects != "" & !is.na(projects)]
@@ -1321,9 +1538,13 @@ write_html_report <- function(path, title, catalog, gene_summary, deg_hits, dtu_
     split_projects(gene_summary$deg_projects),
     split_projects(gene_summary$dtu_projects),
     split_projects(gene_summary$splicing_projects),
+    split_projects(gene_summary$wgcna_projects),
+    split_projects(gene_summary$mfuzz_projects),
     if (nrow(deg_hits) > 0) deg_hits$deg_project else character(),
     if (nrow(dtu_hits) > 0) dtu_hits$dtu_project else character(),
-    if (nrow(splicing_hits) > 0) splicing_hits$splicing_project else character()
+    if (nrow(splicing_hits) > 0) splicing_hits$splicing_project else character(),
+    if (nrow(wgcna_hits) > 0) wgcna_hits$wgcna_project else character(),
+    if (nrow(mfuzz_hits) > 0) mfuzz_hits$mfuzz_project else character()
   )))
   project_options <- paste(vapply(all_projects, function(project) {
     paste0("<option value='", html_escape(project), "'>", html_escape(project), "</option>")
@@ -1387,8 +1608,16 @@ write_html_report <- function(path, title, catalog, gene_summary, deg_hits, dtu_
       dplyr::filter(gene_id == row$matched_gene_id) %>%
       dplyr::select(gene_display_label, splicing_project, splicing_variable, splicing_contrast, event_type, FDR, IncLevelDifference) %>%
       dplyr::arrange(FDR, dplyr::desc(abs(IncLevelDifference)))
+    wgcna_table <- wgcna_hits %>%
+      dplyr::filter(gene_id == row$matched_gene_id) %>%
+      dplyr::select(gene_display_label, wgcna_project, wgcna_scope, module_color, module_label, is_hub, kME, abs_kME, module_rank) %>%
+      dplyr::arrange(wgcna_project, module_color, module_rank)
+    mfuzz_table <- mfuzz_hits %>%
+      dplyr::filter(gene_id == row$matched_gene_id) %>%
+      dplyr::select(gene_display_label, mfuzz_project, mfuzz_scope, cluster, membership) %>%
+      dplyr::arrange(mfuzz_project, cluster, dplyr::desc(membership))
     gene_projects <- projects_for_gene(row$group, row$matched_gene_id)
-    gene_search <- paste(row$group, row$query, row$matched_gene_id, row$gene_name, row$gene_display_label, row$biotype, row$description, row$chromosome, row$location, paste(gene_projects, collapse = " "), paste(deg_table$contrast, collapse = " "), paste(dtu_table$transcript_id, collapse = " "), paste(splicing_table$splicing_contrast, collapse = " "))
+    gene_search <- paste(row$group, row$query, row$matched_gene_id, row$gene_name, row$gene_display_label, row$biotype, row$description, row$chromosome, row$location, paste(gene_projects, collapse = " "), paste(deg_table$contrast, collapse = " "), paste(dtu_table$transcript_id, collapse = " "), paste(splicing_table$splicing_contrast, collapse = " "), paste(wgcna_table$module_color, collapse = " "), paste(mfuzz_table$cluster, collapse = " "))
     paste0(
       "<section class='searchable gene' data-kind='gene' data-projects='", project_attr(gene_projects), "' data-search='", html_escape(tolower(gene_search)), "' id='gene_", sanitize(row$group), "_", sanitize(row$matched_gene_id), "'>",
       "<h3>", html_escape(row$gene_display_label), "</h3>",
@@ -1410,6 +1639,10 @@ write_html_report <- function(path, title, catalog, gene_summary, deg_hits, dtu_
       table_to_html(dtu_table, 50),
       "<h4>Splicing do gene</h4>",
       table_to_html(splicing_table, 50),
+      "<h4>WGCNA do gene</h4>",
+      table_to_html(wgcna_table, 50),
+      "<h4>Mfuzz do gene</h4>",
+      table_to_html(mfuzz_table, 50),
       "</section>"
     )
   }, character(1)), collapse = "\n")
@@ -1509,7 +1742,12 @@ write_html_report <- function(path, title, catalog, gene_summary, deg_hits, dtu_
     paste0("<div class='card'><div class='num'>", length(unique(catalog$group)), "</div><div>grupos</div></div>"),
     paste0("<div class='card'><div class='num'>", n_deg_sig_genes, "</div><div>genes com DEG significativo</div></div>"),
     paste0("<div class='card'><div class='num'>", n_dtu_sig_genes, "</div><div>genes com DTU significativo</div></div>"),
+    paste0("<div class='card'><div class='num'>", n_dtu_sig_transcripts, "</div><div>transcritos com DTU significativo</div></div>"),
+    paste0("<div class='card'><div class='num'>", n_dtu_report_genes, "</div><div>genes do relatorio com DTU</div></div>"),
     paste0("<div class='card'><div class='num'>", n_splicing_sig_genes, "</div><div>genes com splicing significativo</div></div>"),
+    paste0("<div class='card'><div class='num'>", n_wgcna_genes, "</div><div>genes em modulos WGCNA</div></div>"),
+    paste0("<div class='card'><div class='num'>", n_wgcna_hub_genes, "</div><div>genes hub WGCNA</div></div>"),
+    paste0("<div class='card'><div class='num'>", n_mfuzz_genes, "</div><div>genes em clusters Mfuzz</div></div>"),
     paste0("<div class='card'><div class='num text'>", html_escape(generated_at), "</div><div>gerado em</div></div>"),
     "</div>",
     "<div class='gene-index'>", gene_index, "</div>",
@@ -1530,7 +1768,7 @@ write_html_report <- function(path, title, catalog, gene_summary, deg_hits, dtu_
     "<section id='groups'><h2>Grupos</h2><ul>", group_links, "</ul>", group_sections, "</section>",
     "<section id='genes'><h2>Genes individuais</h2>", gene_sections, "</section>",
     "<section id='tables'><h2>Tabelas</h2>",
-    paste0("<p>Arquivos completos: <code>", html_escape(add_table_suffix("tables/gene_catalog.tsv")), "</code>, <code>", html_escape(add_table_suffix("tables/gene_expression_summary.tsv")), "</code>, <code>", html_escape(add_table_suffix("tables/expression_long.tsv")), "</code>, <code>", html_escape(add_table_suffix("tables/expression_summary_by_context.tsv")), "</code>, <code>", html_escape(add_table_suffix("tables/deg_hits.tsv")), "</code>, <code>", html_escape(add_table_suffix("tables/dtu_hits.tsv")), "</code> e <code>", html_escape(add_table_suffix("tables/splicing_hits.tsv")), "</code>.</p>"),
+    paste0("<p>Arquivos completos: <code>", html_escape(add_table_suffix("tables/gene_catalog.tsv")), "</code>, <code>", html_escape(add_table_suffix("tables/gene_expression_summary.tsv")), "</code>, <code>", html_escape(add_table_suffix("tables/expression_long.tsv")), "</code>, <code>", html_escape(add_table_suffix("tables/expression_summary_by_context.tsv")), "</code>, <code>", html_escape(add_table_suffix("tables/deg_hits.tsv")), "</code>, <code>", html_escape(add_table_suffix("tables/dtu_hits.tsv")), "</code>, <code>", html_escape(add_table_suffix("tables/splicing_hits.tsv")), "</code>, <code>", html_escape(add_table_suffix("tables/wgcna_hits.tsv")), "</code> e <code>", html_escape(add_table_suffix("tables/mfuzz_hits.tsv")), "</code>.</p>"),
     table_to_html(gene_summary, 100),
     "</section>",
     "</body></html>"
@@ -1564,8 +1802,12 @@ dtu_hits <- load_dtu_hits(dtu_root, gene_catalog)
 dtu_hits_annotated <- annotate_dtu_hits(dtu_hits, gene_catalog)
 splicing_hits <- load_splicing_hits(splicing_root, gene_catalog)
 splicing_hits_annotated <- annotate_splicing_hits(splicing_hits, gene_catalog)
+wgcna_hits <- load_wgcna_hits(wgcna_root, gene_catalog)
+wgcna_hits_annotated <- annotate_wgcna_hits(wgcna_hits, gene_catalog)
+mfuzz_hits <- load_mfuzz_hits(mfuzz_root, gene_catalog)
+mfuzz_hits_annotated <- annotate_mfuzz_hits(mfuzz_hits, gene_catalog)
 gene_summary <- summarise_gene_descriptives(expr_long, expr_summary, deg_hits, gene_catalog)
-gene_summary <- add_optional_gene_summaries(gene_summary, dtu_hits, splicing_hits)
+gene_summary <- add_optional_gene_summaries(gene_summary, dtu_hits, splicing_hits, wgcna_hits, mfuzz_hits)
 
 write_tsv2(gene_catalog, file.path(out_dir, "tables", "gene_catalog.tsv"))
 write_tsv2(expr_long, file.path(out_dir, "tables", "expression_long.tsv"))
@@ -1573,6 +1815,8 @@ write_tsv2(expr_summary, file.path(out_dir, "tables", "expression_summary_by_con
 write_tsv2(deg_hits_annotated, file.path(out_dir, "tables", "deg_hits.tsv"))
 write_tsv2(dtu_hits_annotated, file.path(out_dir, "tables", "dtu_hits.tsv"))
 write_tsv2(splicing_hits_annotated, file.path(out_dir, "tables", "splicing_hits.tsv"))
+write_tsv2(wgcna_hits_annotated, file.path(out_dir, "tables", "wgcna_hits.tsv"))
+write_tsv2(mfuzz_hits_annotated, file.path(out_dir, "tables", "mfuzz_hits.tsv"))
 write_tsv2(gene_summary, file.path(out_dir, "tables", "gene_expression_summary.tsv"))
 
 global_plots <- list(
@@ -1607,5 +1851,5 @@ invisible(plot_or_skip("global DEG direction", function() plot_deg_direction_sum
 plot_group_outputs(expr_long, expr_summary, deg_hits, gene_catalog, out_dir)
 plot_gene_outputs(expr_long, deg_hits, out_dir)
 
-write_html_report(file.path(out_dir, "gene_set_report.html"), report_title, gene_catalog, gene_summary, deg_hits_annotated, dtu_hits_annotated, splicing_hits_annotated, global_plots, expression_unit)
+write_html_report(file.path(out_dir, "gene_set_report.html"), report_title, gene_catalog, gene_summary, deg_hits_annotated, dtu_hits_annotated, splicing_hits_annotated, wgcna_hits_annotated, mfuzz_hits_annotated, global_plots, expression_unit)
 log_info(paste("[OK] Relatorio 090 concluido:", file.path(out_dir, "gene_set_report.html")))

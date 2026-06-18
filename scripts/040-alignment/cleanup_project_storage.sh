@@ -193,7 +193,7 @@ safe_remove_star_bams() {
     local abs_root
 
     if [[ ! -d "$root" ]]; then
-        echo "[SKIP] STAR BAM root nao existe: $root"
+        echo "[SKIP] STAR output root nao existe: $root"
         return 0
     fi
 
@@ -202,7 +202,7 @@ safe_remove_star_bams() {
         "$guard_root"|"$guard_root"/*)
             ;;
         *)
-            echo "[ERRO] Recusando remover BAMs fora da area esperada." >&2
+            echo "[ERRO] Recusando remover arquivos STAR fora da area esperada." >&2
             echo "[ERRO] Caminho: $abs_root" >&2
             echo "[ERRO] Area permitida: $guard_root" >&2
             exit 1
@@ -212,9 +212,15 @@ safe_remove_star_bams() {
     if [ "$DRY_RUN" -eq 1 ]; then
         find "$abs_root" -type f \( -name '*.bam' -o -name '*.bam.bai' -o -name '*.bai' \) -print |
             sed 's/^/[DRY-RUN] rm -- /'
+        find "$abs_root" -type d \( -name '_STARtmp' -o -name '*STARtmp' \) -print |
+            sed 's/^/[DRY-RUN] rm -rf -- /'
     else
-        echo "[CLEANUP] Removendo BAMs STAR em: $abs_root"
+        echo "[CLEANUP] Removendo BAMs e temporarios STAR em: $abs_root"
         find "$abs_root" -type f \( -name '*.bam' -o -name '*.bam.bai' -o -name '*.bai' \) -print -delete
+        while IFS= read -r tmp_dir; do
+            echo "$tmp_dir"
+            rm -rf -- "$tmp_dir"
+        done < <(find "$abs_root" -type d \( -name '_STARtmp' -o -name '*STARtmp' \) -print)
     fi
 }
 
