@@ -21,7 +21,8 @@ Options:
   --all                  Run the complete RNA-seq workflow
   --step STEP            Run one step. Can be repeated.
                          Steps: reference, download, metadata, qc, salmon/star,
-                                tximport, batch, deg, dtu, splicing, report
+                                tximport, batch, deg, dtu, splicing, wgcna,
+                                mfuzz, report
   --executor MODE        Execution backend: slurm or local
   --local                Shortcut for --executor local
   --dry-run              Print commands without executing jobs
@@ -151,6 +152,12 @@ declare -A STEP_ALIASES=(
   [transcript-usage]="dtu"
   [splicing]="splicing"
   [as]="splicing"
+  [wgcna]="wgcna"
+  [coexpression]="wgcna"
+  [co-expression]="wgcna"
+  [mfuzz]="mfuzz"
+  [mfuz]="mfuzz"
+  [soft-clustering]="mfuzz"
   [report]="report"
 )
 
@@ -162,6 +169,8 @@ if [[ "${RUN_ALL}" == "true" ]]; then
   [[ "${RUN_BATCH_CORRECTION}" == "1" ]] && SELECTED["batch"]=1
   [[ "${RUN_DTU_ANALYSIS}" == "1" ]] && SELECTED["dtu"]=1
   [[ "${RUN_SPLICING_ANALYSIS}" == "1" ]] && SELECTED["splicing"]=1
+  [[ "${RUN_WGCNA_ANALYSIS}" == "1" ]] && SELECTED["wgcna"]=1
+  [[ "${RUN_MFUZZ_ANALYSIS}" == "1" ]] && SELECTED["mfuzz"]=1
   [[ "${RUN_GENE_REPORT}" == "1" ]] && SELECTED["report"]=1
 else
   for raw_step in "${REQUESTED_STEPS[@]}"; do
@@ -297,6 +306,8 @@ BATCH_JOB=""
 DEG_JOB=""
 DTU_JOB=""
 SPLICING_JOB=""
+WGCNA_JOB=""
+MFUZZ_JOB=""
 
 if has_step reference; then
   if [[ "${RUN_SALMON_INDEX}" == "1" ]]; then
@@ -424,9 +435,29 @@ if has_step splicing; then
   SPLICING_JOB="${SUBMITTED_JOB_ID}"
 fi
 
+if has_step wgcna; then
+  wgcna_args=(--chdir="${WGCNA_DIR}" --export="ALL,PROJECT_DIR=${PROJECT_DIR},PIPELINE_CONFIG=${CONFIG_FILE},PIPELINE_EXECUTOR=${PIPELINE_EXECUTOR},STEP_DIR=${WGCNA_SCRIPTS_DIR}")
+  if [[ "${RUN_ALL}" == "true" ]]; then
+    dep_arg="$(dependency_arg "${TXIMPORT_JOB}")"
+    [[ -n "${dep_arg}" ]] && wgcna_args+=("${dep_arg}")
+  fi
+  submit_or_print "${wgcna_args[@]}" "${WGCNA_SCRIPTS_DIR}/run_wgcna_analysis_slurm.sh" --include-all
+  WGCNA_JOB="${SUBMITTED_JOB_ID}"
+fi
+
+if has_step mfuzz; then
+  mfuzz_args=(--chdir="${MFUZZ_DIR}" --export="ALL,PROJECT_DIR=${PROJECT_DIR},PIPELINE_CONFIG=${CONFIG_FILE},PIPELINE_EXECUTOR=${PIPELINE_EXECUTOR},STEP_DIR=${MFUZZ_SCRIPTS_DIR}")
+  if [[ "${RUN_ALL}" == "true" ]]; then
+    dep_arg="$(dependency_arg "${TXIMPORT_JOB}")"
+    [[ -n "${dep_arg}" ]] && mfuzz_args+=("${dep_arg}")
+  fi
+  submit_or_print "${mfuzz_args[@]}" "${MFUZZ_SCRIPTS_DIR}/run_mfuzz_analysis_slurm.sh" --include-all
+  MFUZZ_JOB="${SUBMITTED_JOB_ID}"
+fi
+
 if has_step report; then
   report_args=(--chdir="${GENE_REPORT_DIR}" --export="ALL,PROJECT_DIR=${PROJECT_DIR},PIPELINE_CONFIG=${CONFIG_FILE},PIPELINE_EXECUTOR=${PIPELINE_EXECUTOR},STEP_DIR=${GENE_REPORT_SCRIPTS_DIR}")
-  dep_arg="$(dependency_arg "${DEG_JOB}" "${DTU_JOB}" "${SPLICING_JOB}")"
+  dep_arg="$(dependency_arg "${DEG_JOB}" "${DTU_JOB}" "${SPLICING_JOB}" "${WGCNA_JOB}" "${MFUZZ_JOB}")"
   [[ "${RUN_ALL}" == "true" && -n "${dep_arg}" ]] && report_args+=("${dep_arg}")
   submit_or_print "${report_args[@]}" "${GENE_REPORT_SCRIPTS_DIR}/gene_report_job.sh" \
     --genes "${GENE_REPORT_DIR}/genes.txt" \
@@ -437,6 +468,8 @@ if has_step report; then
     --deg-root "${DEG_DIR}" \
     --dtu-root "${DTU_DIR}" \
     --splicing-root "${SPLICING_DIR}" \
+    --wgcna-root "${WGCNA_DIR}" \
+    --mfuzz-root "${MFUZZ_DIR}" \
     --gff "${GENE_REPORT_ANNOTATION_FILE}" \
     --output-dir "${GENE_REPORT_DIR}/results" \
     --title "${GENE_REPORT_TITLE}"

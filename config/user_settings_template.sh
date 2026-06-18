@@ -39,9 +39,14 @@ export GFF3_URL="https://example.org/annotation.gff3.gz"
 # star: genome alignment plus STAR GeneCounts. Needs genome + GTF/GFF3.
 export QUANT_METHOD="salmon"       # Use "salmon" or "star".
 export STAR_GENECOUNT_COLUMN="unstranded"
-# STAR BAM sorting memory, in bytes. Increase if STAR reports:
-# "not enough memory for BAM sorting" and prints a larger required value.
-export STAR_LIMIT_BAM_SORT_RAM=12000000000
+# STAR_WRITE_BAM=0 keeps only ReadsPerGene.out.tab and logs. This is enough
+# for counts/CPM/DEG/report and saves a lot of disk.
+# Use STAR_WRITE_BAM=1 only if you need sorted BAMs, for example rMATS/splicing
+# or manual genome-browser inspection.
+export STAR_WRITE_BAM=0
+# Used only when STAR_WRITE_BAM=1 and BAM output is sorted by coordinate.
+# Increase if STAR reports "not enough memory for BAM sorting".
+export STAR_LIMIT_BAM_SORT_RAM=24000000000
 
 # Optional: customize where quantification outputs are written.
 # Relative paths are resolved from the repository root.
@@ -74,8 +79,9 @@ export LOCAL_CPUS_PER_TASK=8       # Used only when PIPELINE_EXECUTOR="local".
 #           run-level trimmed FASTQs. Keeps raw FASTQs, merged trimmed FASTQs,
 #           MultiQC and quantification outputs.
 # minimal: after Salmon/STAR succeeds, remove raw FASTQs, all trimmed FASTQs,
-#          individual FastQC folders and STAR BAMs. Saves the most disk, but
-#          rerunning QC/alignment requires downloading/processing again.
+#          individual FastQC folders, STAR BAMs and STAR temporary dirs. Saves
+#          the most disk, but rerunning QC/alignment requires downloading/
+#          processing again.
 export PIPELINE_STORAGE_MODE="full"  # Use "balanced" or "minimal" to save disk.
 export PIPELINE_COMPRESS_RESULTS=1   # Writes large TSV outputs as .tsv.gz.
 
@@ -91,6 +97,8 @@ export RUN_STAR_INDEX=0
 export RUN_BATCH_CORRECTION=0
 export RUN_DTU_ANALYSIS=0
 export RUN_SPLICING_ANALYSIS=0
+export RUN_WGCNA_ANALYSIS=0
+export RUN_MFUZZ_ANALYSIS=0
 export RUN_GENE_REPORT=0
 
 # Optional downstream analyses.
@@ -102,6 +110,15 @@ export RUN_GENE_REPORT=0
 # export SPLICING_TEST_VARIABLES="condition,stage,sex,tissue,infection_mode"
 # export SPLICING_READ_LENGTH=100
 # export SPLICING_LIB_TYPE="fr-unstranded"
+#
+# WGCNA uses the imported expression matrix and metadata traits.
+# Mfuzz uses the imported expression matrix and clusters temporal/profile
+# patterns by MFUZZ_TIME_VARIABLE, usually "stage" for life-cycle data.
+# export WGCNA_TRAIT_COLUMNS="condition,stage,sex,tissue,batch,dataset"
+# export WGCNA_MIN_SAMPLES=12
+# export MFUZZ_TIME_VARIABLE="stage"
+# export MFUZZ_TIME_LEVELS=""
+# export MFUZZ_CLUSTERS=6
 
 # 10) Conda environment names. Change only if your server uses other names.
 export RNA_TOOLS_ENV="rna-tools"
@@ -110,3 +127,5 @@ export R_ANALYSIS_ENV="r-analysis"
 export BATCH_CORRECTION_ENV="batch-correction"
 export DTU_ANALYSIS_ENV="r-analysis"
 export SPLICING_ENV="splicing"
+export WGCNA_ENV="r-analysis"
+export MFUZZ_ENV="r-analysis"

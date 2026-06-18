@@ -11,6 +11,8 @@ dependencies:
   - bioconductor-tximport
   - bioconductor-drimseq
   - bioconductor-isoformswitchanalyzer
+  - bioconductor-biobase
+  - bioconductor-mfuzz
   - r-heatmaply
   - r-pheatmap
   - r-ggplot2

@@ -119,6 +119,8 @@ export BATCH_DIR="${BATCH_DIR:-${PROJECT_DIR}/055-batch-correction}"
 export DEG_DIR="${DEG_DIR:-${PROJECT_DIR}/060-deg-analysis}"
 export DTU_DIR="${DTU_DIR:-${PROJECT_DIR}/070-dtu-analysis}"
 export SPLICING_DIR="${SPLICING_DIR:-${PROJECT_DIR}/080-splicing}"
+export WGCNA_DIR="${WGCNA_DIR:-${PROJECT_DIR}/085-wgcna}"
+export MFUZZ_DIR="${MFUZZ_DIR:-${PROJECT_DIR}/086-mfuzz}"
 export GENE_REPORT_DIR="${GENE_REPORT_DIR:-${PROJECT_DIR}/090-search-gene}"
 export ENVS_DIR="${ENVS_DIR:-${PROJECT_DIR}/envs}"
 
@@ -135,6 +137,8 @@ export BATCH_SCRIPTS_DIR="${BATCH_SCRIPTS_DIR:-${SCRIPTS_DIR}/055-batch-correcti
 export DEG_SCRIPTS_DIR="${DEG_SCRIPTS_DIR:-${SCRIPTS_DIR}/060-deg-analysis}"
 export DTU_SCRIPTS_DIR="${DTU_SCRIPTS_DIR:-${SCRIPTS_DIR}/070-dtu-analysis}"
 export SPLICING_SCRIPTS_DIR="${SPLICING_SCRIPTS_DIR:-${SCRIPTS_DIR}/080-splicing}"
+export WGCNA_SCRIPTS_DIR="${WGCNA_SCRIPTS_DIR:-${SCRIPTS_DIR}/085-wgcna}"
+export MFUZZ_SCRIPTS_DIR="${MFUZZ_SCRIPTS_DIR:-${SCRIPTS_DIR}/086-mfuzz}"
 export GENE_REPORT_SCRIPTS_DIR="${GENE_REPORT_SCRIPTS_DIR:-${SCRIPTS_DIR}/090-search-gene}"
 
 export REF_DATA_DIR="${REF_DATA_DIR:-${REF_DIR}/data}"
@@ -217,7 +221,7 @@ export SALMON_KMER_SIZE="${SALMON_KMER_SIZE:-31}"
 export STAR_GENOME_SA_INDEX_NBASES="${STAR_GENOME_SA_INDEX_NBASES:-12}"
 export STAR_GTF_GENOME_SA_INDEX_NBASES="${STAR_GTF_GENOME_SA_INDEX_NBASES:-10}"
 export STAR_LIMIT_GENOME_GENERATE_RAM="${STAR_LIMIT_GENOME_GENERATE_RAM:-170000000000}"
-export STAR_LIMIT_BAM_SORT_RAM="${STAR_LIMIT_BAM_SORT_RAM:-12000000000}"
+export STAR_LIMIT_BAM_SORT_RAM="${STAR_LIMIT_BAM_SORT_RAM:-24000000000}"
 export STAR_GENECOUNT_COLUMN="${STAR_GENECOUNT_COLUMN:-unstranded}"
 export STAR_GENECOUNT_COLUMN="${STAR_GENECOUNT_COLUMN,,}"
 export STAR_READ_FILES_COMMAND="${STAR_READ_FILES_COMMAND:-zcat}"
@@ -262,6 +266,8 @@ export STAR_QUANT_CONCURRENCY="${STAR_QUANT_CONCURRENCY:-2}"
 export DEG_CONCURRENCY="${DEG_CONCURRENCY:-2}"
 export DTU_CONCURRENCY="${DTU_CONCURRENCY:-1}"
 export SPLICING_CONCURRENCY="${SPLICING_CONCURRENCY:-2}"
+export WGCNA_CONCURRENCY="${WGCNA_CONCURRENCY:-1}"
+export MFUZZ_CONCURRENCY="${MFUZZ_CONCURRENCY:-1}"
 export PIPELINE_EXECUTOR="${PIPELINE_EXECUTOR:-slurm}"
 export LOCAL_CPUS_PER_TASK="${LOCAL_CPUS_PER_TASK:-$THREADS}"
 export RUN_STAR_INDEX="${RUN_STAR_INDEX:-0}"
@@ -275,8 +281,20 @@ fi
 export RUN_BATCH_CORRECTION="${RUN_BATCH_CORRECTION:-0}"
 export RUN_DTU_ANALYSIS="${RUN_DTU_ANALYSIS:-0}"
 export RUN_SPLICING_ANALYSIS="${RUN_SPLICING_ANALYSIS:-0}"
+export RUN_WGCNA_ANALYSIS="${RUN_WGCNA_ANALYSIS:-0}"
+export RUN_MFUZZ_ANALYSIS="${RUN_MFUZZ_ANALYSIS:-0}"
 export RUN_GENE_REPORT="${RUN_GENE_REPORT:-0}"
 export PIPELINE_WAIT_FOR_CHILD_JOBS="${PIPELINE_WAIT_FOR_CHILD_JOBS:-1}"
+
+# STAR quantification only needs ReadsPerGene.out.tab. BAM output is disabled
+# by default to avoid hundreds of GB of intermediate files. It is enabled
+# automatically when splicing/rMATS is requested because rMATS needs sorted BAMs.
+if [[ "${RUN_SPLICING_ANALYSIS}" == "1" ]]; then
+    export STAR_WRITE_BAM="${STAR_WRITE_BAM:-1}"
+else
+    export STAR_WRITE_BAM="${STAR_WRITE_BAM:-0}"
+fi
+export STAR_BAM_OUTPUT_TYPE="${STAR_BAM_OUTPUT_TYPE:-BAM SortedByCoordinate}"
 
 # Storage policy for large generated intermediates.
 #
@@ -285,9 +303,9 @@ export PIPELINE_WAIT_FOR_CHILD_JOBS="${PIPELINE_WAIT_FOR_CHILD_JOBS:-1}"
 #           MultiQC summary and quantification outputs; remove per-run trimmed
 #           FASTQs and individual FastQC directories.
 # minimal: after step 040 succeeds, keep only summaries and downstream
-#          quantification/results; remove raw FASTQs, trimmed FASTQs and STAR
-#          BAM files. Rerunning QC/alignment will require downloading/processing
-#          again.
+#          quantification/results; remove raw FASTQs, trimmed FASTQs, STAR
+#          BAM files and STAR temporary sorting directories. Rerunning
+#          QC/alignment will require downloading/processing again.
 export PIPELINE_STORAGE_MODE="${PIPELINE_STORAGE_MODE:-full}"
 export PIPELINE_STORAGE_MODE="${PIPELINE_STORAGE_MODE,,}"
 case "$PIPELINE_STORAGE_MODE" in
@@ -350,6 +368,28 @@ export SPLICING_READ_LENGTH="${SPLICING_READ_LENGTH:-100}"
 export SPLICING_LIB_TYPE="${SPLICING_LIB_TYPE:-fr-unstranded}"
 export SPLICING_RMATS_COMMAND="${SPLICING_RMATS_COMMAND:-rmats.py}"
 export SPLICING_FDR_THRESHOLD="${SPLICING_FDR_THRESHOLD:-0.05}"
+export WGCNA_TRAIT_COLUMNS="${WGCNA_TRAIT_COLUMNS:-condition,stage,sex,tissue,batch,dataset}"
+export WGCNA_MIN_SAMPLES="${WGCNA_MIN_SAMPLES:-12}"
+export WGCNA_MIN_GENES="${WGCNA_MIN_GENES:-500}"
+export WGCNA_MIN_EXPRESSION="${WGCNA_MIN_EXPRESSION:-1}"
+export WGCNA_MIN_FRACTION="${WGCNA_MIN_FRACTION:-0.20}"
+export WGCNA_POWER="${WGCNA_POWER:-0}"
+export WGCNA_FIT_CUTOFF="${WGCNA_FIT_CUTOFF:-0.80}"
+export WGCNA_NETWORK_TYPE="${WGCNA_NETWORK_TYPE:-signed}"
+export WGCNA_COR_METHOD="${WGCNA_COR_METHOD:-pearson}"
+export WGCNA_MIN_MODULE_SIZE="${WGCNA_MIN_MODULE_SIZE:-30}"
+export WGCNA_MERGE_CUT_HEIGHT="${WGCNA_MERGE_CUT_HEIGHT:-0.25}"
+export WGCNA_TOP_HUBS="${WGCNA_TOP_HUBS:-30}"
+export WGCNA_MAX_BLOCK_SIZE="${WGCNA_MAX_BLOCK_SIZE:-20000}"
+export MFUZZ_TIME_VARIABLE="${MFUZZ_TIME_VARIABLE:-stage}"
+export MFUZZ_TIME_LEVELS="${MFUZZ_TIME_LEVELS:-}"
+export MFUZZ_GROUP_COLUMNS="${MFUZZ_GROUP_COLUMNS:-}"
+export MFUZZ_CLUSTERS="${MFUZZ_CLUSTERS:-6}"
+export MFUZZ_M="${MFUZZ_M:-0}"
+export MFUZZ_MIN_SAMPLES="${MFUZZ_MIN_SAMPLES:-6}"
+export MFUZZ_MIN_GENES="${MFUZZ_MIN_GENES:-50}"
+export MFUZZ_MIN_EXPRESSION="${MFUZZ_MIN_EXPRESSION:-1}"
+export MFUZZ_MIN_FRACTION="${MFUZZ_MIN_FRACTION:-0.20}"
 export GENE_REPORT_TITLE="${GENE_REPORT_TITLE:-Candidate gene report}"
 
 # Generic defaults used by 090-search-gene. Projects with organism-specific
@@ -373,6 +413,8 @@ export PYTHON_ENV="${PYTHON_ENV:-python-list}"
 export BATCH_CORRECTION_ENV="${BATCH_CORRECTION_ENV:-batch-correction}"
 export DTU_ANALYSIS_ENV="${DTU_ANALYSIS_ENV:-$R_ANALYSIS_ENV}"
 export SPLICING_ENV="${SPLICING_ENV:-splicing}"
+export WGCNA_ENV="${WGCNA_ENV:-$R_ANALYSIS_ENV}"
+export MFUZZ_ENV="${MFUZZ_ENV:-$R_ANALYSIS_ENV}"
 
 pipeline_projects() {
     local projects="${PIPELINE_PROJECTS//,/ }"
@@ -431,6 +473,14 @@ activate_dtu_analysis() {
 
 activate_splicing() {
     activate_conda_env "$SPLICING_ENV"
+}
+
+activate_wgcna_analysis() {
+    activate_conda_env "$WGCNA_ENV"
+}
+
+activate_mfuzz_analysis() {
+    activate_conda_env "$MFUZZ_ENV"
 }
 
 check_command() {
