@@ -67,6 +67,14 @@ case "${STAR_GENECOUNT_COLUMN:-unstranded}" in
     ;;
 esac
 
+case "${STAR_WRITE_BAM:-0}" in
+  0|1|true|TRUE|yes|YES|false|FALSE|no|NO|y|Y|n|N)
+    ;;
+  *)
+    die "STAR_WRITE_BAM must be 0/1 or yes/no. Current value: ${STAR_WRITE_BAM}"
+    ;;
+esac
+
 if ! [[ "${STAR_LIMIT_BAM_SORT_RAM:-}" =~ ^[0-9]+$ ]] || [[ "${STAR_LIMIT_BAM_SORT_RAM}" -lt 1 ]]; then
   die "STAR_LIMIT_BAM_SORT_RAM must be a positive integer in bytes. Current value: ${STAR_LIMIT_BAM_SORT_RAM:-unset}"
 fi
@@ -122,7 +130,9 @@ for flag in \
   CLEANUP_FASTQ_FTP \
   CLEANUP_STAR_BAM \
   RUN_DTU_ANALYSIS \
-  RUN_SPLICING_ANALYSIS
+  RUN_SPLICING_ANALYSIS \
+  RUN_WGCNA_ANALYSIS \
+  RUN_MFUZZ_ANALYSIS
 do
   case "${!flag:-0}" in
     0|1|true|TRUE|yes|YES|false|FALSE|no|NO|y|Y|n|N)
@@ -140,7 +150,17 @@ for numeric_var in \
   DTU_CONCURRENCY \
   SPLICING_MIN_REPLICATES \
   SPLICING_READ_LENGTH \
-  SPLICING_CONCURRENCY
+  SPLICING_CONCURRENCY \
+  WGCNA_CONCURRENCY \
+  WGCNA_MIN_SAMPLES \
+  WGCNA_MIN_GENES \
+  WGCNA_MIN_MODULE_SIZE \
+  WGCNA_TOP_HUBS \
+  WGCNA_MAX_BLOCK_SIZE \
+  MFUZZ_CONCURRENCY \
+  MFUZZ_MIN_SAMPLES \
+  MFUZZ_MIN_GENES \
+  MFUZZ_CLUSTERS
 do
   numeric_value="${!numeric_var:-}"
   if ! [[ "${numeric_value}" =~ ^[0-9]+$ ]] || [[ "${numeric_value}" -lt 1 ]]; then
@@ -157,6 +177,46 @@ case "${SPLICING_LIB_TYPE:-fr-unstranded}" in
     ;;
 esac
 
+for numeric_var in \
+  WGCNA_MIN_EXPRESSION \
+  WGCNA_MIN_FRACTION \
+  WGCNA_FIT_CUTOFF \
+  WGCNA_MERGE_CUT_HEIGHT \
+  MFUZZ_M \
+  MFUZZ_MIN_EXPRESSION \
+  MFUZZ_MIN_FRACTION
+do
+  numeric_value="${!numeric_var:-}"
+  if ! [[ "${numeric_value}" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+    die "${numeric_var} must be numeric. Current value: ${numeric_value:-unset}"
+  fi
+done
+unset numeric_var numeric_value
+
+if ! [[ "${WGCNA_POWER:-0}" =~ ^[0-9]+$ ]]; then
+  die "WGCNA_POWER must be a non-negative integer, or 0 for automatic selection. Current value: ${WGCNA_POWER:-unset}"
+fi
+
+case "${WGCNA_NETWORK_TYPE:-signed}" in
+  signed|unsigned|signed-hybrid|"signed hybrid")
+    ;;
+  *)
+    die "WGCNA_NETWORK_TYPE must be signed, unsigned, or signed-hybrid. Current value: ${WGCNA_NETWORK_TYPE}"
+    ;;
+esac
+
+case "${WGCNA_COR_METHOD:-pearson}" in
+  pearson|bicor)
+    ;;
+  *)
+    die "WGCNA_COR_METHOD must be pearson or bicor. Current value: ${WGCNA_COR_METHOD}"
+    ;;
+esac
+
+if [[ "${RUN_MFUZZ_ANALYSIS:-0}" == "1" && -z "${MFUZZ_TIME_VARIABLE:-}" ]]; then
+  die "RUN_MFUZZ_ANALYSIS=1 needs MFUZZ_TIME_VARIABLE, for example stage."
+fi
+
 if [[ "${RUN_DTU_ANALYSIS:-0}" == "1" ]]; then
   if [[ "${QUANT_METHOD:-salmon}" != "salmon" ]]; then
     warn "RUN_DTU_ANALYSIS=1 but QUANT_METHOD=${QUANT_METHOD}. DTU uses Salmon transcript-level quant.sf files; it can run only if Salmon quantifications already exist under QUANT_DIR."
@@ -170,6 +230,13 @@ if [[ "${RUN_SPLICING_ANALYSIS:-0}" == "1" ]]; then
   if [[ "${QUANT_METHOD:-salmon}" != "star" ]]; then
     warn "RUN_SPLICING_ANALYSIS=1 but QUANT_METHOD=${QUANT_METHOD}. Splicing uses STAR sorted BAMs; it can run only if STAR BAMs already exist under STAR_QUANT_DIR."
   fi
+  case "${STAR_WRITE_BAM:-0}" in
+    1|true|TRUE|yes|YES|y|Y)
+      ;;
+    *)
+      warn "RUN_SPLICING_ANALYSIS=1 but STAR_WRITE_BAM=${STAR_WRITE_BAM:-0}. rMATS needs STAR sorted BAMs; enable STAR_WRITE_BAM=1 unless BAMs already exist under STAR_QUANT_DIR."
+      ;;
+  esac
   if [[ -z "${REF_GTF:-}" && -z "${GTF_URL:-}" ]]; then
     die "RUN_SPLICING_ANALYSIS=1 needs REF_GTF or GTF_URL because rMATS requires a GTF annotation."
   fi
