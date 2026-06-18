@@ -85,6 +85,8 @@ if (!requireNamespace("WGCNA", quietly = TRUE)) {
   stop("[ERRO] Pacote WGCNA nao encontrado no ambiente R ativo.")
 }
 
+library(WGCNA)
+
 dir.create(output_root, recursive = TRUE, showWarnings = FALSE)
 tryCatch(WGCNA::allowWGCNAThreads(nThreads = threads), error = function(e) invisible(FALSE))
 
