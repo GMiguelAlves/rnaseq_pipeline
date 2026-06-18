@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import csv
 import os
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
@@ -31,6 +32,61 @@ class RenamePlan:
 def load_metadata(path: Path) -> pd.DataFrame:
     sep = "\t" if path.suffix.lower() == ".tsv" else ","
     return pd.read_csv(path, sep=sep, dtype=str, keep_default_na=False)
+
+
+def default_pipeline_config() -> Path | None:
+    script_path = Path(__file__).resolve()
+    for parent in script_path.parents:
+        candidate = parent / "config" / "pipeline_config.sh"
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def read_config_value(config_path: Path, variable: str) -> str:
+    if not config_path.is_file():
+        return ""
+
+    command = (
+        'set -euo pipefail; '
+        'source "$1"; '
+        'var_name="$2"; '
+        'printf "%s" "${!var_name}"'
+    )
+    result = subprocess.run(
+        ["bash", "-lc", command, "bash", str(config_path), variable],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return ""
+    return result.stdout.strip()
+
+
+def resolve_fastq_dir(
+    project: str,
+    scratch_root_arg: str | None,
+    fastq_dir_arg: Path | None,
+    pipeline_config: Path | None,
+) -> Path:
+    if fastq_dir_arg is not None:
+        return fastq_dir_arg
+
+    scratch_root = (scratch_root_arg or os.environ.get("SCRATCH_ROOT") or "").strip()
+    if not scratch_root:
+        config_path = pipeline_config or default_pipeline_config()
+        if config_path is not None:
+            scratch_root = read_config_value(config_path, "SCRATCH_ROOT")
+
+    if not scratch_root:
+        raise SystemExit(
+            "[ERRO] SCRATCH_ROOT nao definido. Passe --scratch-root /caminho, "
+            "passe --fastq-dir /caminho/<PROJECT>/fastq_ftp, ou execute a partir "
+            "do repositorio com config/pipeline_config.sh disponivel."
+        )
+
+    return Path(scratch_root) / project / "fastq_ftp"
 
 
 def normalize_read_suffixes(layout: str) -> tuple[str, ...]:
@@ -186,20 +242,36 @@ def main() -> None:
     parser.add_argument("--project", required=True)
     parser.add_argument(
         "--scratch-root",
-        type=Path,
-        default=Path(os.environ.get("SCRATCH_ROOT", "work/scratch")),
+        default=None,
         help="Directory containing <PROJECT>/fastq_ftp",
     )
     parser.add_argument("--fastq-dir", type=Path, default=None)
+    parser.add_argument(
+        "--pipeline-config",
+        type=Path,
+        default=None,
+        help="Optional config/pipeline_config.sh used to resolve SCRATCH_ROOT when --scratch-root is empty.",
+    )
     parser.add_argument("--layout", choices=["paired", "single"], default="paired")
     parser.add_argument("--manifest", type=Path, default=None)
     parser.add_argument("--allow-extra", action="store_true")
     parser.add_argument("--apply", action="store_true")
     args = parser.parse_args()
 
-    fastq_dir = args.fastq_dir or args.scratch_root / args.project / "fastq_ftp"
+    fastq_dir = resolve_fastq_dir(
+        project=args.project,
+        scratch_root_arg=args.scratch_root,
+        fastq_dir_arg=args.fastq_dir,
+        pipeline_config=args.pipeline_config,
+    )
     if not fastq_dir.exists():
-        raise FileNotFoundError(f"FASTQ directory not found: {fastq_dir}")
+        raise FileNotFoundError(
+            f"FASTQ directory not found: {fastq_dir}\n"
+            "Dica: se estiver rodando manualmente, use um caminho absoluto, por exemplo:\n"
+            f"  --scratch-root /scratch/Schisto-epigenetics/gustavo\n"
+            "ou:\n"
+            f"  --fastq-dir /scratch/Schisto-epigenetics/gustavo/{args.project}/fastq_ftp"
+        )
 
     metadata = load_metadata(args.metadata)
     plan = build_plan(metadata, args.project, fastq_dir, args.layout)

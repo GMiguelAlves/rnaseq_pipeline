@@ -76,7 +76,28 @@ python scripts/020-data-download/generate_rename_manifest.py \
 python scripts/020-data-download/rename_fastqs_from_metadata.py \
   --metadata 025-parse/030-metadata_final/AllProjects_metadata_new.csv \
   --project PRJXXXX \
-  --scratch-root "$SCRATCH_ROOT" \
+  --manifest 020-data-download/PRJXXXX_rename_manifest.csv
+```
+
+The rename script reads `SCRATCH_ROOT` from `config/pipeline_config.sh` when
+`--scratch-root` is omitted or empty. You can still pass the directory
+explicitly:
+
+```bash
+python scripts/020-data-download/rename_fastqs_from_metadata.py \
+  --metadata 025-parse/030-metadata_final/AllProjects_metadata_new.csv \
+  --project PRJXXXX \
+  --scratch-root /scratch/my_user/rnaseq \
+  --manifest 020-data-download/PRJXXXX_rename_manifest.csv
+```
+
+If needed, bypass `SCRATCH_ROOT` entirely:
+
+```bash
+python scripts/020-data-download/rename_fastqs_from_metadata.py \
+  --metadata 025-parse/030-metadata_final/AllProjects_metadata_new.csv \
+  --project PRJXXXX \
+  --fastq-dir /scratch/my_user/rnaseq/PRJXXXX/fastq_ftp \
   --manifest 020-data-download/PRJXXXX_rename_manifest.csv
 ```
 
