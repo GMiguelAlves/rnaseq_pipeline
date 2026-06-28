@@ -176,6 +176,10 @@ fi
 
 activate_mfuzz_analysis
 check_command Rscript
+
+echo "[INFO] Rscript ativo: $(command -v Rscript)"
+Rscript -e 'missing <- c("Mfuzz", "Biobase", "e1071")[!vapply(c("Mfuzz", "Biobase", "e1071"), requireNamespace, logical(1), quietly = TRUE)]; if (length(missing) > 0) { cat("[ERRO] Pacotes R ausentes no ambiente ativo:", paste(missing, collapse = ", "), "\n", sep = " "); cat("[ERRO] Atualize o ambiente no cluster com: conda env update -n ", Sys.getenv("MFUZZ_ENV", unset = "r-analysis"), " -f envs/r-analysis.yml --prune\n", sep = ""); cat("[ERRO] Alternativa: conda install -n ", Sys.getenv("MFUZZ_ENV", unset = "r-analysis"), " -c conda-forge -c bioconda bioconductor-mfuzz bioconductor-biobase r-e1071\n", sep = ""); quit(status = 1) }'
+
 echo "+ ${CMD[*]}"
 "${CMD[@]}"
 echo "[OK] Etapa 086 Mfuzz concluida."

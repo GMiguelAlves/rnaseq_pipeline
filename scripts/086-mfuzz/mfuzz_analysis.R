@@ -75,12 +75,21 @@ min_genes <- as.integer(get_arg("--min-genes", Sys.getenv("MFUZZ_MIN_GENES", uns
 min_expression <- as.numeric(get_arg("--min-expression", Sys.getenv("MFUZZ_MIN_EXPRESSION", unset = "1")))
 min_fraction <- as.numeric(get_arg("--min-fraction", Sys.getenv("MFUZZ_MIN_FRACTION", unset = "0.20")))
 
-if (!requireNamespace("Mfuzz", quietly = TRUE)) {
-  stop("[ERRO] Pacote Mfuzz nao encontrado no ambiente R ativo.")
+missing_packages <- c("Mfuzz", "Biobase", "e1071")[!vapply(c("Mfuzz", "Biobase", "e1071"), requireNamespace, logical(1), quietly = TRUE)]
+if (length(missing_packages) > 0) {
+  stop(
+    "[ERRO] Pacotes R ausentes no ambiente ativo: ", paste(missing_packages, collapse = ", "),
+    "\n[ERRO] O arquivo envs/r-analysis.yml foi atualizado, mas ambientes Conda existentes nao mudam automaticamente.",
+    "\n[ERRO] No cluster, rode: conda env update -n ", Sys.getenv("MFUZZ_ENV", unset = "r-analysis"), " -f envs/r-analysis.yml --prune",
+    "\n[ERRO] Ou instale direto: conda install -n ", Sys.getenv("MFUZZ_ENV", unset = "r-analysis"), " -c conda-forge -c bioconda bioconductor-mfuzz bioconductor-biobase r-e1071"
+  )
 }
-if (!requireNamespace("Biobase", quietly = TRUE)) {
-  stop("[ERRO] Pacote Biobase nao encontrado no ambiente R ativo.")
-}
+
+# Some Mfuzz versions call Biobase/e1071 functions such as exprs() and
+# cmeans() by name. Attaching them makes those functions available during
+# Mfuzz execution.
+library(Biobase)
+library(e1071)
 
 dir.create(output_root, recursive = TRUE, showWarnings = FALSE)
 
