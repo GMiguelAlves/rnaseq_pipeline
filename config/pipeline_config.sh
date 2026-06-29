@@ -394,9 +394,31 @@ export GENE_REPORT_TITLE="${GENE_REPORT_TITLE:-Candidate gene report}"
 
 # Generic defaults used by 090-search-gene. Projects with organism-specific
 # life-cycle vocabularies can override these values here.
+organism_key="${ORGANISM_NAME,,}"
+if [[ -z "${LIFE_STAGE_LEVELS:-}" ]]; then
+    case "$organism_key" in
+        *schistosoma*mansoni*|*s_mansoni*|*smansoni*)
+            export LIFE_STAGE_LEVELS="eggs,miracidium,sporocyst_1d,sporocyst_5d,sporocyst_32d,cercariae,schistosomula_2d,adult_26d,adult,unknown"
+            ;;
+    esac
+fi
+if [[ -z "${STAGE_SYNONYM_MAP:-}" ]]; then
+    case "$organism_key" in
+        *schistosoma*mansoni*|*s_mansoni*|*smansoni*)
+            export STAGE_SYNONYM_MAP="^ovos?$=eggs,^eggs?$=eggs,^miracid.*=miracidium,^sporocyst.*1d$=sporocyst_1d,^1d.*sporocyst.*=sporocyst_1d,^sporocyst.*5d$=sporocyst_5d,^5d.*sporocyst.*=sporocyst_5d,^sporocyst.*32d$=sporocyst_32d,^32d.*sporocyst.*=sporocyst_32d,^cercaria.*=cercariae,^schistosomula.*2d$=schistosomula_2d,^2d.*somule.*=schistosomula_2d,^adult.*26d$=adult_26d,^26d.*juvenile.*=adult_26d,^adults?$=adult"
+            ;;
+    esac
+fi
 export LIFE_STAGE_LEVELS="${LIFE_STAGE_LEVELS:-unknown}"
 export STAGE_SYNONYM_MAP="${STAGE_SYNONYM_MAP:-}"
+if [[ -z "${MFUZZ_TIME_LEVELS:-}" && "${MFUZZ_TIME_VARIABLE:-stage}" == "stage" && "$LIFE_STAGE_LEVELS" != "unknown" ]]; then
+    export MFUZZ_TIME_LEVELS="${LIFE_STAGE_LEVELS%,unknown}"
+fi
+export GENE_REPORT_STAGE_TAU_THRESHOLD="${GENE_REPORT_STAGE_TAU_THRESHOLD:-0.60}"
+export GENE_REPORT_STAGE_MIN_EXPRESSION="${GENE_REPORT_STAGE_MIN_EXPRESSION:-1}"
+export GENE_REPORT_MFUZZ_MEMBERSHIP_THRESHOLD="${GENE_REPORT_MFUZZ_MEMBERSHIP_THRESHOLD:-0.70}"
 export ORGANISM_SPECIFIC_REPORTS="${ORGANISM_SPECIFIC_REPORTS:-0}"
+unset organism_key
 
 # ---------------------------------------------------------------------------
 # Conda environments

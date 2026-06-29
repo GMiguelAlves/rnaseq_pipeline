@@ -119,6 +119,18 @@ export RUN_GENE_REPORT=0
 # export MFUZZ_TIME_VARIABLE="stage"
 # export MFUZZ_TIME_LEVELS=""
 # export MFUZZ_CLUSTERS=6
+#
+# Candidate-gene reports can flag stage-specific genes using expression tau,
+# significant DEG contrasts for stage, and strong Mfuzz membership. When
+# ORGANISM_NAME contains "Schistosoma mansoni", the default stage order is:
+# eggs -> miracidium -> sporocyst_1d -> sporocyst_5d -> sporocyst_32d ->
+# cercariae -> schistosomula_2d -> adult_26d -> adult.
+# Override these only when your metadata uses another vocabulary/order.
+# export LIFE_STAGE_LEVELS="eggs,miracidium,sporocyst_1d,sporocyst_5d,sporocyst_32d,cercariae,schistosomula_2d,adult_26d,adult,unknown"
+# export STAGE_SYNONYM_MAP="^ovos?$=eggs,^eggs?$=eggs,^adults?$=adult"
+# export GENE_REPORT_STAGE_TAU_THRESHOLD=0.60
+# export GENE_REPORT_STAGE_MIN_EXPRESSION=1
+# export GENE_REPORT_MFUZZ_MEMBERSHIP_THRESHOLD=0.70
 
 # 10) Conda environment names. Change only if your server uses other names.
 export RNA_TOOLS_ENV="rna-tools"
