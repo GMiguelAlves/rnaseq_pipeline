@@ -10,6 +10,19 @@ For each project listed in `PIPELINE_PROJECTS`, create a parser YAML:
 025-parse/020-metadata_parsers/<PROJECT>/configs/<PROJECT>.yaml
 ```
 
+Recommended starter command from the repository root:
+
+```bash
+python scripts/bootstrap_project.py \
+  --project PRJNA000000 \
+  --organism "Example organism" \
+  --scratch-root /scratch/my_user/rnaseq_project \
+  --conda-base /path/to/miniconda3
+```
+
+This creates a generic YAML with editable `regex_map` sections for
+`condition`, `stage`, `tissue`, `sex`, and `replicate`.
+
 Optional files:
 
 ```text
@@ -64,6 +77,14 @@ Without Slurm:
 bash scripts/025-parse/run_merge.sh
 ```
 
+Then validate the merged metadata:
+
+```bash
+python scripts/validate_metadata.py \
+  --metadata 025-parse/030-metadata_final/AllProjects_metadata_new.csv \
+  --strict
+```
+
 ## Outputs
 
 - `025-parse/010-raw_metadata/<PROJECT>.tsv`
@@ -71,4 +92,3 @@ bash scripts/025-parse/run_merge.sh
 - `025-parse/015-intermediate_folder/<PROJECT>_enriched.csv` when enrich is used
 - `025-parse/020-metadata_parsers/Allprojects/<PROJECT>_parsed.csv`
 - `025-parse/030-metadata_final/AllProjects_metadata.csv`
-

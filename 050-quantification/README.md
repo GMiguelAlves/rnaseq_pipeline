@@ -8,6 +8,11 @@ This step follows `QUANT_METHOD`:
   TPM.
 - `star`: imports STAR `ReadsPerGene.out.tab` and writes counts plus CPM.
 
+When `--all` is used, the step first writes/updates project-specific matrices
+for the projects in `PIPELINE_PROJECTS`, then rebuilds the global matrices from
+all complete project-specific outputs already present in `QUANTIFICATION_DIR`.
+This preserves earlier projects when new projects are processed later.
+
 ## Before You Run
 
 Confirm these exist:
@@ -28,6 +33,29 @@ Relevant defaults in `config/pipeline_config.sh`:
 - `STAR_GENECOUNT_COLUMN`
 - `REF_GTF`
 - `QUANTIFICATION_DIR`
+- `QUANT_COUNTS_MATRIX_NAME`
+- `SALMON_TPM_MATRIX_NAME`
+- `STAR_CPM_MATRIX_NAME`
+- `QUANT_SAMPLES_NAME`
+- `TX2GENE_NAME`
+- `PIPELINE_COMPRESS_RESULTS`
+
+Set these in `config/user_settings.sh` to move or rename quantification
+outputs:
+
+```bash
+export QUANT_DIR="${PROJECT_DIR}/040-alignment/quants"
+export STAR_QUANT_DIR="${PROJECT_DIR}/040-alignment/star_quant"
+export QUANTIFICATION_DIR="${PROJECT_DIR}/050-quantification"
+export PIPELINE_COMPRESS_RESULTS=1
+export QUANT_COUNTS_MATRIX_NAME="counts_matrix.tsv.gz"
+export SALMON_TPM_MATRIX_NAME="tpm_matrix.tsv.gz"
+export STAR_CPM_MATRIX_NAME="star_cpm_matrix.tsv.gz"
+export QUANT_SAMPLES_NAME="quant_samples.tsv.gz"
+export TX2GENE_NAME="tx2gene.tsv.gz"
+```
+
+Relative paths are resolved from the repository root.
 
 ## Run
 
@@ -65,12 +93,13 @@ bash scripts/050-quantification/run_quantification_slurm.sh --all --local --sbat
 
 ## Outputs
 
-- `050-quantification/counts_matrix.tsv`
-- `050-quantification/tpm_matrix.tsv` when `QUANT_METHOD=salmon`
-- `050-quantification/star_cpm_matrix.tsv` when `QUANT_METHOD=star`
-- `050-quantification/quant_samples.tsv`
-- `050-quantification/tx2gene.tsv` when `QUANT_METHOD=salmon`
-- project-specific files when a single project is imported
+- `${QUANT_COUNTS_MATRIX_FILE}`
+- `${SALMON_TPM_MATRIX_FILE}` when `QUANT_METHOD=salmon`
+- `${STAR_CPM_MATRIX_FILE}` when `QUANT_METHOD=star`
+- `${QUANT_SAMPLES_FILE}`
+- `${TX2GENE_FILE}` when `QUANT_METHOD=salmon`
+- project-specific files such as `<PROJECT>_counts_matrix.tsv.gz`,
+  `<PROJECT>_tpm_matrix.tsv.gz`, and `<PROJECT>_quant_samples.tsv.gz`
 
-`quant_samples.tsv` includes `quant_method`, `expression_unit`, and, for STAR,
+The sample table includes `quant_method`, `expression_unit`, and, for STAR,
 the selected `star_count_column`.

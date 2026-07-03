@@ -56,6 +56,10 @@ create_rnaseq_output_tree() {
     "${PROJECT_DIR}/000-logs/tximport" \
     "${PROJECT_DIR}/000-logs/batch" \
     "${PROJECT_DIR}/000-logs/deg" \
+    "${PROJECT_DIR}/000-logs/dtu" \
+    "${PROJECT_DIR}/000-logs/splicing" \
+    "${PROJECT_DIR}/000-logs/wgcna" \
+    "${PROJECT_DIR}/000-logs/mfuzz" \
     "${PROJECT_DIR}/000-logs/report" \
     "${PROJECT_DIR}/logs" \
     "${PROJECT_DIR}/logs/err" \
@@ -63,6 +67,10 @@ create_rnaseq_output_tree() {
     "${PROJECT_DIR}/logs/quantification" \
     "${PROJECT_DIR}/logs/batch" \
     "${PROJECT_DIR}/logs/deg" \
+    "${PROJECT_DIR}/logs/dtu" \
+    "${PROJECT_DIR}/logs/splicing" \
+    "${PROJECT_DIR}/logs/wgcna" \
+    "${PROJECT_DIR}/logs/mfuzz" \
     "${REF_DIR}" \
     "${REF_DIR}/logs" \
     "${DOWNLOAD_DIR}" \
@@ -83,6 +91,7 @@ create_rnaseq_output_tree() {
     "${ALIGN_DIR}/logs" \
     "${ALIGN_DIR}/logs/salmon" \
     "${ALIGN_DIR}/logs/star" \
+    "${QUANT_DIR:-${ALIGN_DIR}/quants}" \
     "${STAR_QUANT_DIR:-${ALIGN_DIR}/star_quant}" \
     "${QUANTIFICATION_DIR}" \
     "${QUANTIFICATION_DIR}/logs" \
@@ -93,6 +102,18 @@ create_rnaseq_output_tree() {
     "${DEG_DIR}" \
     "${DEG_DIR}/logs" \
     "${DEG_DIR}/logs/deg" \
+    "${DTU_DIR}" \
+    "${DTU_DIR}/logs" \
+    "${DTU_DIR}/logs/dtu" \
+    "${SPLICING_DIR}" \
+    "${SPLICING_DIR}/logs" \
+    "${SPLICING_DIR}/logs/splicing" \
+    "${WGCNA_DIR}" \
+    "${WGCNA_DIR}/logs" \
+    "${WGCNA_DIR}/logs/wgcna" \
+    "${MFUZZ_DIR}" \
+    "${MFUZZ_DIR}/logs" \
+    "${MFUZZ_DIR}/logs/mfuzz" \
     "${GENE_REPORT_DIR}" \
     "${GENE_REPORT_DIR}/logs" \
     "${SCRIPTS_DIR}" \
@@ -104,5 +125,9 @@ create_rnaseq_output_tree() {
     "${QUANT_SCRIPTS_DIR}" \
     "${BATCH_SCRIPTS_DIR}" \
     "${DEG_SCRIPTS_DIR}" \
+    "${DTU_SCRIPTS_DIR}" \
+    "${SPLICING_SCRIPTS_DIR}" \
+    "${WGCNA_SCRIPTS_DIR}" \
+    "${MFUZZ_SCRIPTS_DIR}" \
     "${GENE_REPORT_SCRIPTS_DIR}"
 }

@@ -96,4 +96,3 @@ else
     JOB_ID=$("${CMD[@]}" | tail -n 1 | cut -d';' -f1)
     echo "[OK] Job de importacao de quantificacao submetido: $JOB_ID"
 fi
-

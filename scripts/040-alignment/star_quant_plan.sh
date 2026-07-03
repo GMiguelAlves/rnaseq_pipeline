@@ -68,15 +68,36 @@ fi
 
 mkdir -p "$STAR_DIR"
 
+truthy() {
+    case "${1:-0}" in
+        1|true|TRUE|yes|YES|y|Y)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
 CMD=(
     STAR
     --genomeDir "$INDEX_DIR"
     --readFilesIn "$R1" "$R2"
     --runThreadN "${SLURM_CPUS_PER_TASK:-$THREADS}"
     --outFileNamePrefix "${STAR_DIR}/"
-    --outSAMtype BAM SortedByCoordinate
     --quantMode GeneCounts
 )
+
+if truthy "${STAR_WRITE_BAM:-0}"; then
+    # shellcheck disable=SC2206
+    STAR_BAM_OUTPUT_TYPE_ARGS=(${STAR_BAM_OUTPUT_TYPE:-BAM SortedByCoordinate})
+    CMD+=(--outSAMtype "${STAR_BAM_OUTPUT_TYPE_ARGS[@]}")
+    if [[ " ${STAR_BAM_OUTPUT_TYPE_ARGS[*]} " == *" SortedByCoordinate "* ]]; then
+        CMD+=(--limitBAMsortRAM "$STAR_LIMIT_BAM_SORT_RAM")
+    fi
+else
+    CMD+=(--outSAMtype None)
+fi
 
 if [[ -n "${STAR_READ_FILES_COMMAND:-}" ]]; then
     CMD+=(--readFilesCommand "$STAR_READ_FILES_COMMAND")

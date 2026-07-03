@@ -1,0 +1,2 @@
+dataset	sample_id	run_accession	condition	stage	tissue	sex	batch	replicate
+PRJNA000000	SAMPLE_CONTROL_T1_R1	SRR000001	control	time1	whole	unknown	B1	1

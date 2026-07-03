@@ -1,0 +1,358 @@
+\documentclass[
+  12pt,
+  oneside,
+  a4paper,
+  chapter=TITLE,
+  section=TITLE,
+  brazil
+]{abntex2}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage[alf]{abntex2cite}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=black,
+  citecolor=black,
+  urlcolor=blue,
+  pdftitle={Release tecnico do pipeline generico de RNA-seq},
+  pdfauthor={Equipe do pipeline}
+}
+
+\definecolor{codegray}{gray}{0.95}
+\definecolor{placeholdergray}{gray}{0.92}
+
+\lstdefinestyle{bashstyle}{
+  basicstyle=\ttfamily\small,
+  backgroundcolor=\color{codegray},
+  frame=single,
+  breaklines=true,
+  columns=fullflexible,
+  keepspaces=true,
+  showstringspaces=false
+}
+\lstset{style=bashstyle}
+
+\newcommand{\pipelineversion}{Release 1.0}
+\newcommand{\repositoryurl}{\url{https://github.com/GMiguelAlves/rnaseq_smansoni}}
+
+\newcommand{\placeholderfig}[4]{
+  \begin{figure}[htbp]
+    \centering
+    \fbox{
+      \begin{minipage}[c][0.26\textheight][c]{0.86\textwidth}
+        \centering
+        \vspace{0.2cm}
+        {\large\textbf{Espaco reservado para imagem}}\\[0.35cm]
+        \path{#1}\\[0.35cm]
+        \small #2\\[0.25cm]
+        \footnotesize Substituir esta caixa por \texttt{\textbackslash includegraphics[width=\textbackslash textwidth]\{caminho-da-figura\}} quando a imagem final estiver disponivel.
+        \vspace{0.2cm}
+      \end{minipage}
+    }
+    \caption{#3}
+    \label{#4}
+  \end{figure}
+}
+
+\titulo{Release tecnico do pipeline generico de RNA-seq}
+\autor{Equipe do pipeline}
+\local{Brasil}
+\data{\today}
+\instituicao{Projeto \texttt{rnaseq\_smansoni}}
+\preambulo{Documento tecnico em formato ABNT descrevendo a metodologia, o funcionamento e os resultados produzidos pelo pipeline.}
+
+\begin{document}
+
+\OnehalfSpacing
+
+\imprimircapa
+\imprimirfolhaderosto
+
+\begin{resumo}
+Este documento apresenta o release tecnico do pipeline \texttt{rnaseq\_smansoni}, reorganizado como uma solucao generica para analises de RNA-seq em diferentes organismos. A versao descrita centraliza parametros em arquivos de configuracao, executa as etapas em ambiente Slurm ou local, aceita referencias fornecidas pelo usuario, suporta quantificacao por Salmon ou STAR, importa matrizes de contagem e expressao, executa analises de expressao diferencial com DESeq2 e gera relatorios exploratorios de genes ou grupos de genes. O objetivo do release e tornar o fluxo reproduzivel, auditavel e mais simples para usuarios que nao sao bioinformatas, preservando flexibilidade para execucao em servidores de alto desempenho.
+
+\textbf{Palavras-chave}: RNA-seq. Pipeline. Slurm. Salmon. STAR. DESeq2. Expressao genica.
+\end{resumo}
+
+\pdfbookmark[0]{\contentsname}{toc}
+\tableofcontents*
+\cleardoublepage
+
+\chapter{Identificacao do release}
+
+\begin{table}[htbp]
+\centering
+\caption{Informacoes gerais do release.}
+\begin{tabular}{>{\bfseries}p{0.30\textwidth}p{0.60\textwidth}}
+\toprule
+Item & Descricao \\
+\midrule
+Nome do pipeline & \texttt{rnaseq\_smansoni} \\
+Versao do documento & \pipelineversion \\
+Repositorio & \repositoryurl \\
+Tipo de analise & RNA-seq bulk, com suporte a multiplos projetos \\
+Modo de execucao & Slurm/HPC ou local \\
+Quantificacao & Salmon ou STAR GeneCounts \\
+Organismo & Generico, definido pelas referencias e metadados do usuario \\
+Arquivo principal & \texttt{rnaseq\_pipeline.sh} \\
+Configuracao do usuario & \texttt{config/user\_settings.sh} \\
+Configuracao avancada & \texttt{config/pipeline\_config.sh} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+O pipeline foi originalmente estruturado a partir de uma aplicacao em \textit{Schistosoma mansoni}, mas este release descreve a versao generalizada. A execucao passa a depender principalmente das referencias, dos projetos e dos metadados fornecidos pelo usuario. Com isso, o mesmo fluxo pode ser aplicado a outros organismos desde que existam arquivos FASTA e GFF3/GTF compativeis com as ferramentas escolhidas.
+
+\chapter{Objetivo e escopo}
+
+O objetivo deste release e disponibilizar um pipeline padronizado para transformar dados publicos ou locais de RNA-seq em resultados interpretaveis: arquivos de controle de qualidade, FASTQs processados, matrizes de contagem, matrizes de expressao, analises de expressao diferencial e relatorios de genes de interesse.
+
+O escopo do pipeline inclui:
+
+\begin{itemize}[noitemsep]
+  \item obtencao ou uso de referencias fornecidas pelo usuario;
+  \item download de leituras FASTQ a partir de projetos ENA/SRA;
+  \item parse e validacao de metadados por projeto;
+  \item controle de qualidade de FASTQ bruto e processado;
+  \item trimming e merge por amostra biologica;
+  \item quantificacao por Salmon ou STAR;
+  \item importacao de resultados para matrizes gene-amostra;
+  \item avaliacao e correcao opcional de batch;
+  \item expressao diferencial com DESeq2;
+  \item relatorio HTML para genes ou grupos de genes.
+\end{itemize}
+
+Nao faz parte do escopo inferir automaticamente o desenho biologico ideal para cada projeto. As variaveis experimentais relevantes, como condicao, estagio, tecido, sexo, batch e replicata, devem ser representadas corretamente nos metadados.
+
+\chapter{Arquitetura geral}
+
+A arquitetura e modular. Cada etapa numerada armazena entradas, arquivos intermediarios, logs ou resultados. Os scripts ativos ficam centralizados em \texttt{scripts/}, enquanto os diretorios numerados funcionam como areas de trabalho e saida. Essa separacao reduz ambiguidade para novos usuarios e facilita a manutencao.
+
+\placeholderfig
+  {docs/figures/fig01_fluxo_geral_pipeline.png}
+  {Diagrama recomendado: caixas para as etapas 010, 020, 025, 030, 040, 050, 055, 060 e 090, com setas mostrando dependencias entre referencia, download, metadados, QC, quantificacao, importacao, DEG e relatorio.}
+  {Visao geral do fluxo de trabalho do pipeline. A figura deve destacar que o usuario configura referencias e projetos uma vez, e que as etapas seguintes sao encadeadas por dependencias em Slurm ou executadas em ordem no modo local.}
+  {fig:fluxo-geral}
+
+\section{Organizacao dos diretorios}
+
+\begin{longtable}{>{\ttfamily}p{0.25\textwidth}p{0.65\textwidth}}
+\caption{Diretorios principais do pipeline.}\\
+\toprule
+Diretorio & Funcao \\
+\midrule
+\endfirsthead
+\toprule
+Diretorio & Funcao \\
+\midrule
+\endhead
+config/ & Configuracoes centrais, modelo de configuracao do usuario e contrato minimo de metadados. \\
+scripts/ & Scripts ativos usados pelo orquestrador e pelas execucoes manuais. \\
+010-reference/ & Referencias FASTA, GFF3/GTF e indices de Salmon ou STAR. \\
+020-data-download/ & Configuracoes de download e listas de FASTQ. \\
+025-parse/ & Download, parse, validacao e merge de metadados por projeto. \\
+030-qc-fastq/ & Controle de qualidade, trimming, merge por amostra e MultiQC. \\
+040-alignment/ & Planos de quantificacao e resultados por amostra de Salmon ou STAR. \\
+050-quantification/ & Matrizes de contagem, TPM ou CPM e tabela de amostras importadas. \\
+055-batch-correction/ & Avaliacao e correcao opcional de efeitos de batch. \\
+060-deg-analysis/ & Planos, tabelas e graficos de expressao diferencial. \\
+090-search-gene/ & Relatorio exploratorio de genes ou grupos de genes. \\
+\bottomrule
+\end{longtable}
+
+\section{Ponto de entrada}
+
+O ponto de entrada recomendado e:
+
+\begin{lstlisting}[language=bash]
+bash rnaseq_pipeline.sh --all
+\end{lstlisting}
+
+Tambem e possivel executar apenas etapas especificas:
+
+\begin{lstlisting}[language=bash]
+bash rnaseq_pipeline.sh --step reference
+bash rnaseq_pipeline.sh --step metadata --step qc
+bash rnaseq_pipeline.sh --step salmon --step tximport --step deg
+bash rnaseq_pipeline.sh --step star --step tximport --step report
+\end{lstlisting}
+
+No modo local, sem Slurm:
+
+\begin{lstlisting}[language=bash]
+bash rnaseq_pipeline.sh --all --local
+\end{lstlisting}
+
+Para inspecionar comandos sem submeter jobs:
+
+\begin{lstlisting}[language=bash]
+bash rnaseq_pipeline.sh --all --dry-run
+bash rnaseq_pipeline.sh --all --local --dry-run
+\end{lstlisting}
+
+\chapter{Metodologia}
+
+\section{Configuracao}
+
+A configuracao foi dividida em dois niveis. O arquivo \texttt{config/user\_settings.sh} concentra as escolhas do usuario, como organismo, projetos, caminhos de scratch, base Conda, referencias e metodo de quantificacao. O arquivo \texttt{config/pipeline\_config.sh} contem os defaults avancados, normalizacao de caminhos, variaveis derivadas e funcoes comuns usadas pelos scripts.
+
+Essa separacao permite que usuarios comuns alterem poucos parametros, enquanto usuarios avancados ainda podem ajustar recursos, caminhos e comportamentos especificos.
+
+\placeholderfig
+  {docs/figures/fig02_configuracao_usuario.png}
+  {Diagrama recomendado: entrada do usuario em user\_settings.sh, expansao por pipeline\_config.sh e uso das variaveis pelos scripts de cada etapa.}
+  {Modelo de configuracao do pipeline. A figura deve mostrar que a maioria dos parametros editaveis fica em \texttt{config/user\_settings.sh}, enquanto \texttt{config/pipeline\_config.sh} padroniza valores e distribui variaveis para as etapas.}
+  {fig:configuracao}
+
+\section{Referencias biologicas}
+
+A etapa 010 prepara os arquivos de referencia. O usuario pode fornecer URLs ou arquivos locais para genoma, transcriptoma e anotacao. Em modo Salmon, o indice e construido a partir do transcriptoma. Em modo STAR, o indice anotado e construido a partir do genoma e do arquivo GTF/GFF3, permitindo producao de arquivos \texttt{ReadsPerGene.out.tab} e BAMs ordenados por coordenada.
+
+Arquivos esperados:
+
+\begin{itemize}[noitemsep]
+  \item genoma em FASTA para STAR;
+  \item transcriptoma em FASTA para Salmon;
+  \item anotacao em GFF3 ou GTF para nomes, biotipos, coordenadas e contagens por gene;
+  \item indices em \texttt{010-reference/salmon\_index/} ou \texttt{010-reference/star\_index\_gtf/}.
+\end{itemize}
+
+\section{Download e metadados}
+
+A etapa 020 baixa FASTQs usando configuracoes por projeto. A etapa 025 baixa e transforma metadados da ENA/SRA. Cada projeto pode ter um YAML especifico para mapear campos originais para colunas padronizadas. O contrato minimo esperado inclui \texttt{dataset}, \texttt{sample\_id} e \texttt{run\_accession}. Para analises biologicas mais completas, recomenda-se incluir \texttt{condition}, \texttt{stage}, \texttt{tissue}, \texttt{sex}, \texttt{batch} e \texttt{replicate}.
+
+\section{Controle de qualidade}
+
+A etapa 030 executa controle de qualidade em leituras brutas, trimming, novo controle de qualidade e merge de runs pertencentes a mesma amostra biologica. A avaliacao pode ser realizada com FastQC \cite{andrews2010fastqc}, o processamento com Trim Galore \cite{krueger2023trimgalore} e a sumarizacao com MultiQC \cite{ewels2016multiqc}. Essa etapa produz o plano de amostras que sera consumido pela quantificacao.
+
+\placeholderfig
+  {docs/figures/fig03_qc_multiqc.png}
+  {Imagem recomendada: captura do relatorio MultiQC ou esquema mostrando FASTQ bruto, Trim Galore, FASTQ tratado e relatorio consolidado.}
+  {Controle de qualidade das leituras. A figura deve ilustrar como os FASTQs brutos sao avaliados, processados, reavaliados e resumidos antes da quantificacao.}
+  {fig:qc}
+
+\section{Quantificacao por Salmon}
+
+No modo Salmon \cite{patro2017salmon}, o pipeline executa uma tarefa por amostra biologica contra o indice de transcriptoma. Cada amostra produz um arquivo \texttt{quant.sf}. Em seguida, a etapa 050 usa \texttt{tximport} \cite{soneson2015tximport} para resumir estimativas em nivel de gene, gerando matriz de contagens e matriz de TPM.
+
+Esse modo e indicado quando o objetivo principal e obter quantificacao rapida baseada em transcriptoma, com menor custo computacional que alinhamento genomico completo.
+
+\section{Quantificacao por STAR}
+
+No modo STAR \cite{dobin2013star}, o pipeline executa alinhamento genomico contra um indice construido com anotacao. Cada amostra produz BAM ordenado por coordenada, logs de alinhamento e o arquivo \texttt{ReadsPerGene.out.tab}. A etapa 050 importa a coluna configurada de contagem e gera matriz de contagens e matriz CPM.
+
+Esse modo e indicado quando o usuario deseja reter informacoes de alinhamento no genoma, como cromossomo, posicao e arquivos BAM para inspecoes posteriores. O custo computacional e maior que no modo Salmon.
+
+\placeholderfig
+  {docs/figures/fig04_salmon_vs_star.png}
+  {Diagrama recomendado: bifurcacao do fluxo apos QC. Um ramo mostra Salmon, quant.sf, tximport e TPM; o outro mostra STAR, BAM, ReadsPerGene.out.tab e CPM.}
+  {Comparacao operacional entre os modos Salmon e STAR. A figura deve evidenciar que ambos chegam a matrizes gene-amostra, mas produzem arquivos intermediarios e unidades de expressao diferentes.}
+  {fig:salmon-star}
+
+\section{Importacao e matrizes}
+
+A etapa 050 padroniza os resultados de quantificacao. No modo Salmon, o pipeline produz \texttt{counts\_matrix.tsv} e \texttt{tpm\_matrix.tsv}. No modo STAR, produz \texttt{counts\_matrix.tsv} e \texttt{star\_cpm\_matrix.tsv}. A tabela \texttt{quant\_samples.tsv} registra as amostras importadas, o metodo utilizado e a unidade de expressao.
+
+\section{Batch e expressao diferencial}
+
+A etapa 055 avalia e pode corrigir efeitos de batch quando configurada. A etapa 060 usa DESeq2 \cite{love2014deseq2} para gerar analises de expressao diferencial com base nas variaveis disponiveis nos metadados. Os resultados incluem tabelas completas, listas de genes diferencialmente expressos e graficos de diagnostico.
+
+\section{Relatorio de genes}
+
+A etapa 090 gera um relatorio HTML para genes ou grupos de genes informados pelo usuario. O relatorio combina matriz de expressao, metadados, anotacao GFF3/GTF e resultados de DEG. Quando ha anotacao disponivel, as tabelas incluem nome do gene, biotipo, descricao, cromossomo, inicio, fim, fita e localizacao genomica.
+
+\placeholderfig
+  {docs/figures/fig05_relatorio_genes.png}
+  {Imagem recomendada: captura do relatorio HTML final mostrando cards de resumo, tabela de genes e um grafico de expressao.}
+  {Relatorio exploratorio de genes. A figura deve exemplificar como os resultados finais sao organizados para consulta visual por gene, grupo, contexto biologico, projeto e resultado de DEG.}
+  {fig:relatorio}
+
+\chapter{Execucao em Slurm e modo local}
+
+\section{Slurm}
+
+Em ambiente HPC, o orquestrador submete jobs com \texttt{sbatch} e usa dependencias \texttt{afterok} para encadear etapas. Tarefas por amostra usam arrays Slurm. Por exemplo, \texttt{--array=1-23\%2} significa 23 tarefas no total, com no maximo 2 rodando simultaneamente. Esse limite de concorrencia e configuravel, por exemplo em \texttt{STAR\_QUANT\_CONCURRENCY}.
+
+\placeholderfig
+  {docs/figures/fig06_slurm_dependencias.png}
+  {Diagrama recomendado: grafo de jobs Slurm mostrando referencia, download/metadados, QC, array de Salmon ou STAR, importacao, DEG e relatorio, com setas afterok.}
+  {Execucao em Slurm. A figura deve representar jobs independentes, arrays por amostra e dependencias entre etapas, destacando como o pipeline evita iniciar etapas downstream antes da conclusao das entradas necessarias.}
+  {fig:slurm}
+
+\section{Modo local}
+
+No modo local, o pipeline executa as mesmas etapas em ordem na maquina atual. Arrays Slurm sao simulados sequencialmente por meio de \texttt{SLURM\_ARRAY\_TASK\_ID}. Esse modo e util para testes, aulas, pequenos projetos e ambientes sem \texttt{sbatch}. Para datasets grandes, recomenda-se Slurm.
+
+\chapter{Resultados produzidos}
+
+\begin{longtable}{p{0.23\textwidth}p{0.32\textwidth}p{0.35\textwidth}}
+\caption{Principais resultados do pipeline.}\\
+\toprule
+Etapa & Saida principal & Uso esperado \\
+\midrule
+\endfirsthead
+\toprule
+Etapa & Saida principal & Uso esperado \\
+\midrule
+\endhead
+010-reference & Indices Salmon e/ou STAR; FASTA; GFF3/GTF & Reutilizacao em execucoes futuras e base para quantificacao. \\
+020-data-download & FASTQs por projeto no scratch & Entrada bruta para controle de qualidade. \\
+025-parse & \texttt{AllProjects\_metadata\_new.csv} & Contrato central de amostras, projetos e variaveis biologicas. \\
+030-qc-fastq & FastQC, Trim Galore, FASTQs processados, MultiQC & Auditoria da qualidade das leituras e preparo para quantificacao. \\
+040-alignment & \texttt{quant.sf} no Salmon; \texttt{ReadsPerGene.out.tab}, BAM e logs no STAR & Quantificacao por amostra e evidencias de alinhamento. \\
+050-quantification & \texttt{counts\_matrix.tsv}, \texttt{tpm\_matrix.tsv} ou \texttt{star\_cpm\_matrix.tsv}, \texttt{quant\_samples.tsv} & Matrizes para DEG, relatorio e inspecao tabular. \\
+055-batch-correction & Matriz corrigida e diagnosticos de batch & Avaliacao do efeito de batch antes de interpretacoes biologicas. \\
+060-deg-analysis & Tabelas DEG, PCA, MA plots e sumarios & Identificacao de genes diferencialmente expressos por contraste. \\
+090-search-gene & \texttt{gene\_set\_report.html}, tabelas e graficos por gene/grupo & Exploracao visual e tabular de genes de interesse. \\
+\bottomrule
+\end{longtable}
+
+\placeholderfig
+  {docs/figures/fig07_resultados_esperados.png}
+  {Diagrama recomendado: painel com exemplos de arquivos finais, como matriz de contagens, matriz TPM/CPM, tabela DEG e relatorio HTML.}
+  {Produtos finais do pipeline. A figura deve mostrar que o resultado nao e um unico arquivo, mas um conjunto organizado de matrizes, tabelas, graficos, logs e relatorios.}
+  {fig:resultados}
+
+\chapter{Reprodutibilidade e auditoria}
+
+O release prioriza reprodutibilidade por meio de configuracao explicita, logs por etapa, diretorios padronizados e comandos executaveis tanto pelo orquestrador quanto manualmente. O uso de \texttt{--dry-run} permite revisar comandos antes da submissao. O uso de \texttt{config/user\_settings.sh} permite preservar as escolhas do usuario sem editar os scripts ativos.
+
+Para auditoria, recomenda-se arquivar junto aos resultados:
+
+\begin{itemize}[noitemsep]
+  \item \texttt{config/user\_settings.sh} usado na execucao;
+  \item versao ou commit do repositorio;
+  \item arquivos YAML de parse da etapa 025;
+  \item metadados finais;
+  \item logs em \texttt{000-logs/} e nos diretorios de cada etapa;
+  \item versoes dos ambientes Conda.
+\end{itemize}
+
+\chapter{Limitacoes conhecidas}
+
+O pipeline depende da qualidade dos metadados fornecidos. Colunas ausentes, inconsistentes ou mal mapeadas podem reduzir a utilidade dos resultados de DEG e dos relatorios finais. A escolha entre Salmon e STAR tambem afeta os produtos disponiveis: Salmon gera TPM a partir do transcriptoma; STAR gera contagens e CPM com evidencias de alinhamento genomico. Comparacoes diretas entre TPM e CPM exigem cautela metodologica.
+
+O relatorio de genes e exploratorio e depende dos genes informados pelo usuario. A interpretacao biologica final deve considerar desenho experimental, numero de replicas, controle de batch, qualidade das leituras e coerencia das anotacoes.
+
+\chapter{Conclusao}
+
+Este release consolida o pipeline como uma ferramenta generica e reproduzivel para RNA-seq. A centralizacao de configuracoes, o suporte a Slurm e modo local, a escolha entre Salmon e STAR, a importacao padronizada de matrizes e a geracao de relatorios tornam o fluxo mais acessivel para usuarios nao especialistas, sem remover a flexibilidade necessaria para projetos biologicos variados.
+
+\postextual
+
+\nocite{*}
+\bibliography{release_pipeline_abnt}
+
+\end{document}

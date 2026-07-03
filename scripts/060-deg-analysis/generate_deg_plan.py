@@ -2,6 +2,7 @@
 
 import argparse
 import csv
+import os
 from pathlib import Path
 
 
@@ -11,6 +12,8 @@ def parse_args():
     parser.add_argument("--quantification-dir", required=True)
     parser.add_argument("--batch-dir", required=True)
     parser.add_argument("--output-root", required=True)
+    parser.add_argument("--all-counts", default="", help="Counts matrix for all-project analyses.")
+    parser.add_argument("--all-samples", default="", help="Sample table for all-project analyses.")
     parser.add_argument("--projects", default="auto", help="Comma-separated projects or auto.")
     parser.add_argument("--include-all", action="store_true")
     parser.add_argument("--include-corrected", action="store_true")
@@ -28,9 +31,27 @@ def metadata_projects(path):
     return projects
 
 
+def table_candidates(path):
+    path = Path(path)
+    text = str(path)
+    candidates = [path]
+    if text.endswith(".tsv.gz"):
+        candidates.append(Path(text[:-3]))
+    elif text.endswith(".tsv"):
+        candidates.append(Path(text + ".gz"))
+    return candidates
+
+
+def resolve_table(path):
+    for candidate in table_candidates(path):
+        if candidate.exists():
+            return candidate
+    return Path(path)
+
+
 def add_row(rows, args, scope, project, correction, counts, samples, output_dir):
-    counts_path = Path(counts)
-    samples_path = Path(samples)
+    counts_path = resolve_table(counts)
+    samples_path = resolve_table(samples)
     if not args.allow_missing and (not counts_path.exists() or not samples_path.exists()):
         return
     analysis_id = f"{scope}_{correction}" if scope == "all_projects" else f"{project}_{correction}"
@@ -54,6 +75,8 @@ def main():
     qdir = Path(args.quantification_dir)
     bdir = Path(args.batch_dir)
     out_root = Path(args.output_root)
+    all_counts = Path(args.all_counts) if args.all_counts else qdir / os.environ.get("QUANT_COUNTS_MATRIX_NAME", "counts_matrix.tsv")
+    all_samples = Path(args.all_samples) if args.all_samples else qdir / os.environ.get("QUANT_SAMPLES_NAME", "quant_samples.tsv")
 
     if args.projects == "auto":
         projects = metadata_projects(args.metadata)
@@ -68,8 +91,8 @@ def main():
             "project",
             project,
             "raw",
-            qdir / f"{project}_counts_matrix.tsv",
-            qdir / f"{project}_quant_samples.tsv",
+            qdir / f"{project}_counts_matrix.tsv{os.environ.get('PIPELINE_TABLE_SUFFIX', '')}",
+            qdir / f"{project}_quant_samples.tsv{os.environ.get('PIPELINE_TABLE_SUFFIX', '')}",
             out_root / project / "raw",
         )
         if args.include_corrected:
@@ -79,8 +102,8 @@ def main():
                 "project",
                 project,
                 "batch_corrected",
-                bdir / project / "counts_batch_corrected.tsv",
-                bdir / project / "batch_correction_samples.tsv",
+                bdir / project / f"counts_batch_corrected.tsv{os.environ.get('PIPELINE_TABLE_SUFFIX', '')}",
+                bdir / project / f"batch_correction_samples.tsv{os.environ.get('PIPELINE_TABLE_SUFFIX', '')}",
                 out_root / project / "batch_corrected",
             )
 
@@ -91,8 +114,8 @@ def main():
             "all_projects",
             "all_projects",
             "raw",
-            qdir / "counts_matrix.tsv",
-            qdir / "quant_samples.tsv",
+            all_counts,
+            all_samples,
             out_root / "all_projects" / "raw",
         )
         if args.include_corrected:
@@ -102,8 +125,8 @@ def main():
                 "all_projects",
                 "all_projects",
                 "batch_corrected",
-                bdir / "all_projects" / "counts_batch_corrected.tsv",
-                bdir / "all_projects" / "batch_correction_samples.tsv",
+                bdir / "all_projects" / f"counts_batch_corrected.tsv{os.environ.get('PIPELINE_TABLE_SUFFIX', '')}",
+                bdir / "all_projects" / f"batch_correction_samples.tsv{os.environ.get('PIPELINE_TABLE_SUFFIX', '')}",
                 out_root / "all_projects" / "batch_corrected",
             )
 

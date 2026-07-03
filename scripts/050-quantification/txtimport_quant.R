@@ -27,10 +27,11 @@ metadata_file <- get_arg("--metadata", Sys.getenv("METADATA_FINAL_NEW", unset = 
 quant_root <- get_arg("--quant-root", Sys.getenv("QUANT_DIR", unset = ""))
 gtf_file <- get_arg("--gtf", Sys.getenv("REF_GTF", unset = ""))
 out_dir <- get_arg("--output-dir", Sys.getenv("QUANTIFICATION_DIR", unset = getwd()))
-counts_name <- get_arg("--counts-name", ifelse(project == "", "counts_matrix.tsv", paste0(project, "_counts_matrix.tsv")))
-tpm_name <- get_arg("--tpm-name", ifelse(project == "", "tpm_matrix.tsv", paste0(project, "_tpm_matrix.tsv")))
-sample_table_name <- get_arg("--sample-table-name", ifelse(project == "", "quant_samples.tsv", paste0(project, "_quant_samples.tsv")))
-tx2gene_out <- get_arg("--tx2gene-out", file.path(out_dir, "tx2gene.tsv"))
+table_suffix <- Sys.getenv("PIPELINE_TABLE_SUFFIX", unset = "")
+counts_name <- get_arg("--counts-name", ifelse(project == "", Sys.getenv("QUANT_COUNTS_MATRIX_NAME", unset = paste0("counts_matrix.tsv", table_suffix)), paste0(project, "_counts_matrix.tsv", table_suffix)))
+tpm_name <- get_arg("--tpm-name", ifelse(project == "", Sys.getenv("SALMON_TPM_MATRIX_NAME", unset = paste0("tpm_matrix.tsv", table_suffix)), paste0(project, "_tpm_matrix.tsv", table_suffix)))
+sample_table_name <- get_arg("--sample-table-name", ifelse(project == "", Sys.getenv("QUANT_SAMPLES_NAME", unset = paste0("quant_samples.tsv", table_suffix)), paste0(project, "_quant_samples.tsv", table_suffix)))
+tx2gene_out <- get_arg("--tx2gene-out", Sys.getenv("TX2GENE_FILE", unset = file.path(out_dir, Sys.getenv("TX2GENE_NAME", unset = "tx2gene.tsv"))))
 allow_missing <- has_flag("--allow-missing")
 
 required_paths <- c(
@@ -74,7 +75,7 @@ if (nrow(sample_meta) == 0) {
 sample_meta <- sample_meta %>%
   arrange(dataset, sample_id) %>%
   mutate(
-    import_id = ifelse(project == "", paste(dataset, sample_id, sep = "__"), sample_id),
+    import_id = if (project == "") paste(dataset, sample_id, sep = "__") else sample_id,
     quant_file = file.path(quant_root, dataset, sample_id, "quant.sf"),
     quant_exists = file.exists(quant_file)
   )

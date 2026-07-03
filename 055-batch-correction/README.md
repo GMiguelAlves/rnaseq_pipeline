@@ -7,8 +7,8 @@ Optional step to assess and correct batch effects.
 Confirm these exist:
 
 ```text
-050-quantification/counts_matrix.tsv
-050-quantification/quant_samples.tsv
+${QUANT_COUNTS_MATRIX_FILE}
+${QUANT_SAMPLES_FILE}
 ```
 
 Set defaults in `config/pipeline_config.sh`:

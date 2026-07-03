@@ -20,15 +20,65 @@ else
     export PROJECT_DIR="${PROJECT_DIR:-$(pwd)}"
 fi
 
+path_is_absolute() {
+    local path="$1"
+    [[ "$path" == /* || "$path" =~ ^[A-Za-z]:[\\/].* ]]
+}
+
+resolve_path_from_dir() {
+    local base_dir="$1"
+    local path="$2"
+    local parent name
+
+    [[ -n "$path" ]] || return 0
+    case "$path" in
+        "~")
+            printf '%s\n' "$HOME"
+            return 0
+            ;;
+        "~/"*)
+            printf '%s/%s\n' "$HOME" "${path#~/}"
+            return 0
+            ;;
+    esac
+    if path_is_absolute "$path"; then
+        printf '%s\n' "$path"
+        return 0
+    fi
+
+    parent="${path%/*}"
+    name="${path##*/}"
+    [[ "$parent" != "$path" ]] || parent="."
+    if [[ -d "${base_dir}/${parent}" ]]; then
+        printf '%s/%s\n' "$(cd "${base_dir}/${parent}" && pwd)" "$name"
+    else
+        printf '%s/%s\n' "$base_dir" "$path"
+    fi
+}
+
+normalize_project_path_var() {
+    local var_name="$1"
+    local value="${!var_name:-}"
+    [[ -n "$value" ]] || return 0
+    export "${var_name}=$(resolve_path_from_dir "$PROJECT_DIR" "$value")"
+}
+
 # ---------------------------------------------------------------------------
 # Simple user settings
 # ---------------------------------------------------------------------------
 # This optional file is the only file non-bioinformatics users should edit.
 # Values in user_settings.sh override the advanced defaults below.
 export USER_SETTINGS_FILE="${USER_SETTINGS_FILE:-${PROJECT_DIR}/config/user_settings.sh}"
+if ! path_is_absolute "$USER_SETTINGS_FILE"; then
+    export USER_SETTINGS_FILE="${PROJECT_DIR}/${USER_SETTINGS_FILE}"
+fi
+export USER_SETTINGS_DIR="$(cd "$(dirname "$USER_SETTINGS_FILE")" 2>/dev/null && pwd || echo "${PROJECT_DIR}/config")"
 if [[ -f "$USER_SETTINGS_FILE" ]]; then
     # shellcheck disable=SC1090
     source "$USER_SETTINGS_FILE"
+fi
+if [[ -n "${CONDA_BASE:-}" ]]; then
+    export CONDA_BASE="$(resolve_path_from_dir "$USER_SETTINGS_DIR" "$CONDA_BASE")"
 fi
 
 # ---------------------------------------------------------------------------
@@ -36,6 +86,15 @@ fi
 # ---------------------------------------------------------------------------
 export PIPELINE_NAME="${PIPELINE_NAME:-rnaseq_pipeline}"
 export ORGANISM_NAME="${ORGANISM_NAME:-custom_organism}"
+export PIPELINE_COMPRESS_RESULTS="${PIPELINE_COMPRESS_RESULTS:-1}"
+case "${PIPELINE_COMPRESS_RESULTS,,}" in
+    1|true|yes|y)
+        export PIPELINE_TABLE_SUFFIX="${PIPELINE_TABLE_SUFFIX:-.gz}"
+        ;;
+    *)
+        export PIPELINE_TABLE_SUFFIX="${PIPELINE_TABLE_SUFFIX:-}"
+        ;;
+esac
 
 # Space- or comma-separated ENA/SRA project accessions, for example:
 #   export PIPELINE_PROJECTS="PRJNA000001 PRJEB000002"
@@ -58,6 +117,10 @@ export ALIGN_DIR="${ALIGN_DIR:-${PROJECT_DIR}/040-alignment}"
 export QUANTIFICATION_DIR="${QUANTIFICATION_DIR:-${PROJECT_DIR}/050-quantification}"
 export BATCH_DIR="${BATCH_DIR:-${PROJECT_DIR}/055-batch-correction}"
 export DEG_DIR="${DEG_DIR:-${PROJECT_DIR}/060-deg-analysis}"
+export DTU_DIR="${DTU_DIR:-${PROJECT_DIR}/070-dtu-analysis}"
+export SPLICING_DIR="${SPLICING_DIR:-${PROJECT_DIR}/080-splicing}"
+export WGCNA_DIR="${WGCNA_DIR:-${PROJECT_DIR}/085-wgcna}"
+export MFUZZ_DIR="${MFUZZ_DIR:-${PROJECT_DIR}/086-mfuzz}"
 export GENE_REPORT_DIR="${GENE_REPORT_DIR:-${PROJECT_DIR}/090-search-gene}"
 export ENVS_DIR="${ENVS_DIR:-${PROJECT_DIR}/envs}"
 
@@ -72,6 +135,10 @@ export ALIGN_SCRIPTS_DIR="${ALIGN_SCRIPTS_DIR:-${SCRIPTS_DIR}/040-alignment}"
 export QUANT_SCRIPTS_DIR="${QUANT_SCRIPTS_DIR:-${SCRIPTS_DIR}/050-quantification}"
 export BATCH_SCRIPTS_DIR="${BATCH_SCRIPTS_DIR:-${SCRIPTS_DIR}/055-batch-correction}"
 export DEG_SCRIPTS_DIR="${DEG_SCRIPTS_DIR:-${SCRIPTS_DIR}/060-deg-analysis}"
+export DTU_SCRIPTS_DIR="${DTU_SCRIPTS_DIR:-${SCRIPTS_DIR}/070-dtu-analysis}"
+export SPLICING_SCRIPTS_DIR="${SPLICING_SCRIPTS_DIR:-${SCRIPTS_DIR}/080-splicing}"
+export WGCNA_SCRIPTS_DIR="${WGCNA_SCRIPTS_DIR:-${SCRIPTS_DIR}/085-wgcna}"
+export MFUZZ_SCRIPTS_DIR="${MFUZZ_SCRIPTS_DIR:-${SCRIPTS_DIR}/086-mfuzz}"
 export GENE_REPORT_SCRIPTS_DIR="${GENE_REPORT_SCRIPTS_DIR:-${SCRIPTS_DIR}/090-search-gene}"
 
 export REF_DATA_DIR="${REF_DATA_DIR:-${REF_DIR}/data}"
@@ -93,6 +160,11 @@ export QUANT_DIR="${QUANT_DIR:-${ALIGN_DIR}/quants}"
 export QUANT_METHOD="${QUANT_METHOD:-salmon}"
 export QUANT_METHOD="${QUANT_METHOD,,}"
 export STAR_QUANT_DIR="${STAR_QUANT_DIR:-${ALIGN_DIR}/star_quant}"
+
+for output_path_var in QUANT_DIR STAR_QUANT_DIR QUANTIFICATION_DIR; do
+    normalize_project_path_var "$output_path_var"
+done
+unset output_path_var
 
 # ---------------------------------------------------------------------------
 # Reference inputs
@@ -149,18 +221,37 @@ export SALMON_KMER_SIZE="${SALMON_KMER_SIZE:-31}"
 export STAR_GENOME_SA_INDEX_NBASES="${STAR_GENOME_SA_INDEX_NBASES:-12}"
 export STAR_GTF_GENOME_SA_INDEX_NBASES="${STAR_GTF_GENOME_SA_INDEX_NBASES:-10}"
 export STAR_LIMIT_GENOME_GENERATE_RAM="${STAR_LIMIT_GENOME_GENERATE_RAM:-170000000000}"
+export STAR_LIMIT_BAM_SORT_RAM="${STAR_LIMIT_BAM_SORT_RAM:-24000000000}"
 export STAR_GENECOUNT_COLUMN="${STAR_GENECOUNT_COLUMN:-unstranded}"
 export STAR_GENECOUNT_COLUMN="${STAR_GENECOUNT_COLUMN,,}"
 export STAR_READ_FILES_COMMAND="${STAR_READ_FILES_COMMAND:-zcat}"
 export STAR_EXTRA_ARGS="${STAR_EXTRA_ARGS:-}"
 
+export QUANT_COUNTS_MATRIX_NAME="${QUANT_COUNTS_MATRIX_NAME:-counts_matrix.tsv${PIPELINE_TABLE_SUFFIX}}"
+export SALMON_TPM_MATRIX_NAME="${SALMON_TPM_MATRIX_NAME:-tpm_matrix.tsv${PIPELINE_TABLE_SUFFIX}}"
+export STAR_CPM_MATRIX_NAME="${STAR_CPM_MATRIX_NAME:-star_cpm_matrix.tsv${PIPELINE_TABLE_SUFFIX}}"
+export QUANT_SAMPLES_NAME="${QUANT_SAMPLES_NAME:-quant_samples.tsv${PIPELINE_TABLE_SUFFIX}}"
+export TX2GENE_NAME="${TX2GENE_NAME:-tx2gene.tsv${PIPELINE_TABLE_SUFFIX}}"
+
+export QUANT_COUNTS_MATRIX_FILE="${QUANT_COUNTS_MATRIX_FILE:-${QUANTIFICATION_DIR}/${QUANT_COUNTS_MATRIX_NAME}}"
+export SALMON_TPM_MATRIX_FILE="${SALMON_TPM_MATRIX_FILE:-${QUANTIFICATION_DIR}/${SALMON_TPM_MATRIX_NAME}}"
+export STAR_CPM_MATRIX_FILE="${STAR_CPM_MATRIX_FILE:-${QUANTIFICATION_DIR}/${STAR_CPM_MATRIX_NAME}}"
+export QUANT_SAMPLES_FILE="${QUANT_SAMPLES_FILE:-${QUANTIFICATION_DIR}/${QUANT_SAMPLES_NAME}}"
+export TX2GENE_FILE="${TX2GENE_FILE:-${QUANTIFICATION_DIR}/${TX2GENE_NAME}}"
+
+for output_path_var in QUANT_COUNTS_MATRIX_FILE SALMON_TPM_MATRIX_FILE STAR_CPM_MATRIX_FILE QUANT_SAMPLES_FILE TX2GENE_FILE; do
+    normalize_project_path_var "$output_path_var"
+done
+unset output_path_var
+
 if [[ "${QUANT_METHOD}" == "star" ]]; then
-    export EXPRESSION_MATRIX_FILE="${EXPRESSION_MATRIX_FILE:-${QUANTIFICATION_DIR}/star_cpm_matrix.tsv}"
+    export EXPRESSION_MATRIX_FILE="${EXPRESSION_MATRIX_FILE:-${STAR_CPM_MATRIX_FILE}}"
     export EXPRESSION_UNIT="${EXPRESSION_UNIT:-CPM}"
 else
-    export EXPRESSION_MATRIX_FILE="${EXPRESSION_MATRIX_FILE:-${QUANTIFICATION_DIR}/tpm_matrix.tsv}"
+    export EXPRESSION_MATRIX_FILE="${EXPRESSION_MATRIX_FILE:-${SALMON_TPM_MATRIX_FILE}}"
     export EXPRESSION_UNIT="${EXPRESSION_UNIT:-TPM}"
 fi
+normalize_project_path_var EXPRESSION_MATRIX_FILE
 
 # ---------------------------------------------------------------------------
 # Resources and pipeline defaults
@@ -173,6 +264,10 @@ export QC_SAMPLE_CONCURRENCY="${QC_SAMPLE_CONCURRENCY:-10}"
 export SALMON_CONCURRENCY="${SALMON_CONCURRENCY:-10}"
 export STAR_QUANT_CONCURRENCY="${STAR_QUANT_CONCURRENCY:-2}"
 export DEG_CONCURRENCY="${DEG_CONCURRENCY:-2}"
+export DTU_CONCURRENCY="${DTU_CONCURRENCY:-1}"
+export SPLICING_CONCURRENCY="${SPLICING_CONCURRENCY:-2}"
+export WGCNA_CONCURRENCY="${WGCNA_CONCURRENCY:-1}"
+export MFUZZ_CONCURRENCY="${MFUZZ_CONCURRENCY:-1}"
 export PIPELINE_EXECUTOR="${PIPELINE_EXECUTOR:-slurm}"
 export LOCAL_CPUS_PER_TASK="${LOCAL_CPUS_PER_TASK:-$THREADS}"
 export RUN_STAR_INDEX="${RUN_STAR_INDEX:-0}"
@@ -184,8 +279,76 @@ else
     export RUN_STAR_GTF_INDEX="${RUN_STAR_GTF_INDEX:-0}"
 fi
 export RUN_BATCH_CORRECTION="${RUN_BATCH_CORRECTION:-0}"
+export RUN_DTU_ANALYSIS="${RUN_DTU_ANALYSIS:-0}"
+export RUN_SPLICING_ANALYSIS="${RUN_SPLICING_ANALYSIS:-0}"
+export RUN_WGCNA_ANALYSIS="${RUN_WGCNA_ANALYSIS:-0}"
+export RUN_MFUZZ_ANALYSIS="${RUN_MFUZZ_ANALYSIS:-0}"
 export RUN_GENE_REPORT="${RUN_GENE_REPORT:-0}"
 export PIPELINE_WAIT_FOR_CHILD_JOBS="${PIPELINE_WAIT_FOR_CHILD_JOBS:-1}"
+
+# STAR quantification only needs ReadsPerGene.out.tab. BAM output is disabled
+# by default to avoid hundreds of GB of intermediate files. It is enabled
+# automatically when splicing/rMATS is requested because rMATS needs sorted BAMs.
+if [[ "${RUN_SPLICING_ANALYSIS}" == "1" ]]; then
+    export STAR_WRITE_BAM="${STAR_WRITE_BAM:-1}"
+else
+    export STAR_WRITE_BAM="${STAR_WRITE_BAM:-0}"
+fi
+export STAR_BAM_OUTPUT_TYPE="${STAR_BAM_OUTPUT_TYPE:-BAM SortedByCoordinate}"
+
+# Storage policy for large generated intermediates.
+#
+# full: keep every generated file, best for debugging/restarts.
+# balanced: after step 040 succeeds, keep raw FASTQs, merged trimmed FASTQs,
+#           MultiQC summary and quantification outputs; remove per-run trimmed
+#           FASTQs and individual FastQC directories.
+# minimal: after step 040 succeeds, keep only summaries and downstream
+#          quantification/results; remove raw FASTQs, trimmed FASTQs, STAR
+#          BAM files and STAR temporary sorting directories. Rerunning
+#          QC/alignment will require downloading/processing again.
+export PIPELINE_STORAGE_MODE="${PIPELINE_STORAGE_MODE:-full}"
+export PIPELINE_STORAGE_MODE="${PIPELINE_STORAGE_MODE,,}"
+case "$PIPELINE_STORAGE_MODE" in
+    full)
+        default_run_storage_cleanup=0
+        default_cleanup_fastqc_dirs=0
+        default_cleanup_trimmed_runs=0
+        default_cleanup_trimmed_merged=0
+        default_cleanup_fastq_ftp=0
+        default_cleanup_star_bam=0
+        ;;
+    balanced)
+        default_run_storage_cleanup=1
+        default_cleanup_fastqc_dirs=1
+        default_cleanup_trimmed_runs=1
+        default_cleanup_trimmed_merged=0
+        default_cleanup_fastq_ftp=0
+        default_cleanup_star_bam=0
+        ;;
+    minimal)
+        default_run_storage_cleanup=1
+        default_cleanup_fastqc_dirs=1
+        default_cleanup_trimmed_runs=1
+        default_cleanup_trimmed_merged=1
+        default_cleanup_fastq_ftp=1
+        default_cleanup_star_bam=1
+        if [[ "${RUN_SPLICING_ANALYSIS}" == "1" ]]; then
+            default_cleanup_star_bam=0
+        fi
+        ;;
+    *)
+        echo "[ERRO] PIPELINE_STORAGE_MODE invalido: ${PIPELINE_STORAGE_MODE}. Use full, balanced ou minimal." >&2
+        exit 1
+        ;;
+esac
+export RUN_STORAGE_CLEANUP_AFTER_ALIGNMENT="${RUN_STORAGE_CLEANUP_AFTER_ALIGNMENT:-$default_run_storage_cleanup}"
+export CLEANUP_FASTQC_DIRS="${CLEANUP_FASTQC_DIRS:-$default_cleanup_fastqc_dirs}"
+export CLEANUP_TRIMMED_RUNS="${CLEANUP_TRIMMED_RUNS:-$default_cleanup_trimmed_runs}"
+export CLEANUP_TRIMMED_MERGED="${CLEANUP_TRIMMED_MERGED:-$default_cleanup_trimmed_merged}"
+export CLEANUP_FASTQ_FTP="${CLEANUP_FASTQ_FTP:-$default_cleanup_fastq_ftp}"
+export CLEANUP_STAR_BAM="${CLEANUP_STAR_BAM:-$default_cleanup_star_bam}"
+unset default_run_storage_cleanup default_cleanup_fastqc_dirs default_cleanup_trimmed_runs
+unset default_cleanup_trimmed_merged default_cleanup_fastq_ftp default_cleanup_star_bam
 
 export FASTQ_LAYOUT="${FASTQ_LAYOUT:-paired}"
 export TRIM_QUALITY="${TRIM_QUALITY:-20}"
@@ -195,13 +358,67 @@ export BATCH_COLUMN="${BATCH_COLUMN:-dataset}"
 export BATCH_COVARIATES="${BATCH_COVARIATES:-}"
 export DEG_TEST_VARIABLES="${DEG_TEST_VARIABLES:-condition,stage,sex,tissue,infection_mode}"
 export DEG_DESIGN_COVARIATES="${DEG_DESIGN_COVARIATES:-}"
+export DTU_TEST_VARIABLES="${DTU_TEST_VARIABLES:-$DEG_TEST_VARIABLES}"
+export DTU_MIN_REPLICATES="${DTU_MIN_REPLICATES:-2}"
+export DTU_MIN_GENE_COUNT="${DTU_MIN_GENE_COUNT:-10}"
+export DTU_MIN_TRANSCRIPTS_PER_GENE="${DTU_MIN_TRANSCRIPTS_PER_GENE:-2}"
+export SPLICING_TEST_VARIABLES="${SPLICING_TEST_VARIABLES:-condition,stage,sex,tissue,infection_mode}"
+export SPLICING_MIN_REPLICATES="${SPLICING_MIN_REPLICATES:-2}"
+export SPLICING_READ_LENGTH="${SPLICING_READ_LENGTH:-100}"
+export SPLICING_LIB_TYPE="${SPLICING_LIB_TYPE:-fr-unstranded}"
+export SPLICING_RMATS_COMMAND="${SPLICING_RMATS_COMMAND:-rmats.py}"
+export SPLICING_FDR_THRESHOLD="${SPLICING_FDR_THRESHOLD:-0.05}"
+export WGCNA_TRAIT_COLUMNS="${WGCNA_TRAIT_COLUMNS:-condition,stage,sex,tissue,batch,dataset}"
+export WGCNA_MIN_SAMPLES="${WGCNA_MIN_SAMPLES:-12}"
+export WGCNA_MIN_GENES="${WGCNA_MIN_GENES:-500}"
+export WGCNA_MIN_EXPRESSION="${WGCNA_MIN_EXPRESSION:-1}"
+export WGCNA_MIN_FRACTION="${WGCNA_MIN_FRACTION:-0.20}"
+export WGCNA_POWER="${WGCNA_POWER:-0}"
+export WGCNA_FIT_CUTOFF="${WGCNA_FIT_CUTOFF:-0.80}"
+export WGCNA_NETWORK_TYPE="${WGCNA_NETWORK_TYPE:-signed}"
+export WGCNA_COR_METHOD="${WGCNA_COR_METHOD:-pearson}"
+export WGCNA_MIN_MODULE_SIZE="${WGCNA_MIN_MODULE_SIZE:-30}"
+export WGCNA_MERGE_CUT_HEIGHT="${WGCNA_MERGE_CUT_HEIGHT:-0.25}"
+export WGCNA_TOP_HUBS="${WGCNA_TOP_HUBS:-30}"
+export WGCNA_MAX_BLOCK_SIZE="${WGCNA_MAX_BLOCK_SIZE:-20000}"
+export MFUZZ_TIME_VARIABLE="${MFUZZ_TIME_VARIABLE:-stage}"
+export MFUZZ_TIME_LEVELS="${MFUZZ_TIME_LEVELS:-}"
+export MFUZZ_GROUP_COLUMNS="${MFUZZ_GROUP_COLUMNS:-}"
+export MFUZZ_CLUSTERS="${MFUZZ_CLUSTERS:-6}"
+export MFUZZ_M="${MFUZZ_M:-0}"
+export MFUZZ_MIN_SAMPLES="${MFUZZ_MIN_SAMPLES:-6}"
+export MFUZZ_MIN_GENES="${MFUZZ_MIN_GENES:-50}"
+export MFUZZ_MIN_EXPRESSION="${MFUZZ_MIN_EXPRESSION:-1}"
+export MFUZZ_MIN_FRACTION="${MFUZZ_MIN_FRACTION:-0.20}"
 export GENE_REPORT_TITLE="${GENE_REPORT_TITLE:-Candidate gene report}"
 
 # Generic defaults used by 090-search-gene. Projects with organism-specific
 # life-cycle vocabularies can override these values here.
+organism_key="${ORGANISM_NAME,,}"
+if [[ -z "${LIFE_STAGE_LEVELS:-}" ]]; then
+    case "$organism_key" in
+        *schistosoma*mansoni*|*s_mansoni*|*smansoni*)
+            export LIFE_STAGE_LEVELS="eggs,miracidium,sporocyst_1d,sporocyst_5d,sporocyst_32d,cercariae,schistosomula_2d,adult_26d,adult,unknown"
+            ;;
+    esac
+fi
+if [[ -z "${STAGE_SYNONYM_MAP:-}" ]]; then
+    case "$organism_key" in
+        *schistosoma*mansoni*|*s_mansoni*|*smansoni*)
+            export STAGE_SYNONYM_MAP="^ovos?$=eggs,^eggs?$=eggs,^miracid.*=miracidium,^sporocyst.*1d$=sporocyst_1d,^1d.*sporocyst.*=sporocyst_1d,^sporocyst.*5d$=sporocyst_5d,^5d.*sporocyst.*=sporocyst_5d,^sporocyst.*32d$=sporocyst_32d,^32d.*sporocyst.*=sporocyst_32d,^cercaria.*=cercariae,^schistosomula.*2d$=schistosomula_2d,^2d.*somule.*=schistosomula_2d,^adult.*26d$=adult_26d,^26d.*juvenile.*=adult_26d,^adults?$=adult"
+            ;;
+    esac
+fi
 export LIFE_STAGE_LEVELS="${LIFE_STAGE_LEVELS:-unknown}"
 export STAGE_SYNONYM_MAP="${STAGE_SYNONYM_MAP:-}"
+if [[ -z "${MFUZZ_TIME_LEVELS:-}" && "${MFUZZ_TIME_VARIABLE:-stage}" == "stage" && "$LIFE_STAGE_LEVELS" != "unknown" ]]; then
+    export MFUZZ_TIME_LEVELS="${LIFE_STAGE_LEVELS%,unknown}"
+fi
+export GENE_REPORT_STAGE_TAU_THRESHOLD="${GENE_REPORT_STAGE_TAU_THRESHOLD:-0.60}"
+export GENE_REPORT_STAGE_MIN_EXPRESSION="${GENE_REPORT_STAGE_MIN_EXPRESSION:-1}"
+export GENE_REPORT_MFUZZ_MEMBERSHIP_THRESHOLD="${GENE_REPORT_MFUZZ_MEMBERSHIP_THRESHOLD:-0.70}"
 export ORGANISM_SPECIFIC_REPORTS="${ORGANISM_SPECIFIC_REPORTS:-0}"
+unset organism_key
 
 # ---------------------------------------------------------------------------
 # Conda environments
@@ -216,6 +433,10 @@ export RNA_TOOLS_ENV="${RNA_TOOLS_ENV:-rna-tools}"
 export R_ANALYSIS_ENV="${R_ANALYSIS_ENV:-r-analysis}"
 export PYTHON_ENV="${PYTHON_ENV:-python-list}"
 export BATCH_CORRECTION_ENV="${BATCH_CORRECTION_ENV:-batch-correction}"
+export DTU_ANALYSIS_ENV="${DTU_ANALYSIS_ENV:-$R_ANALYSIS_ENV}"
+export SPLICING_ENV="${SPLICING_ENV:-splicing}"
+export WGCNA_ENV="${WGCNA_ENV:-$R_ANALYSIS_ENV}"
+export MFUZZ_ENV="${MFUZZ_ENV:-$R_ANALYSIS_ENV}"
 
 pipeline_projects() {
     local projects="${PIPELINE_PROJECTS//,/ }"
@@ -242,7 +463,9 @@ metadata_default() {
 activate_conda_env() {
     local env_name="$1"
     if [[ -z "${CONDA_BASE:-}" || ! -f "${CONDA_BASE}/etc/profile.d/conda.sh" ]]; then
-        echo "[ERRO] Conda nao encontrado. Ajuste CONDA_BASE em config/pipeline_config.sh." >&2
+        echo "[ERRO] Conda nao encontrado em CONDA_BASE='${CONDA_BASE:-}'." >&2
+        echo "[ERRO] Ajuste CONDA_BASE em ${USER_SETTINGS_FILE:-config/user_settings.sh}." >&2
+        echo "[ERRO] Caminhos relativos sao interpretados a partir de ${USER_SETTINGS_DIR:-config}." >&2
         exit 1
     fi
     # shellcheck disable=SC1090
@@ -264,6 +487,22 @@ activate_r_analysis() {
 
 activate_batch_correction() {
     activate_conda_env "$BATCH_CORRECTION_ENV"
+}
+
+activate_dtu_analysis() {
+    activate_conda_env "$DTU_ANALYSIS_ENV"
+}
+
+activate_splicing() {
+    activate_conda_env "$SPLICING_ENV"
+}
+
+activate_wgcna_analysis() {
+    activate_conda_env "$WGCNA_ENV"
+}
+
+activate_mfuzz_analysis() {
+    activate_conda_env "$MFUZZ_ENV"
 }
 
 check_command() {

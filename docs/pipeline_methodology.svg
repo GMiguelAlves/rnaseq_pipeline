@@ -1,0 +1,199 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="title desc">
+  <title id="title">Metodologia do pipeline RNA-seq</title>
+  <desc id="desc">Figura moderna descrevendo as etapas do pipeline RNA-seq: entradas, referencia, download, metadados, controle de qualidade, quantificacao por Salmon ou STAR, matrizes, correcao de lote, DESeq2 e relatorio de genes.</desc>
+  <defs>
+    <linearGradient id="headerGradient" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#0b1220"/>
+      <stop offset="55%" stop-color="#102a43"/>
+      <stop offset="100%" stop-color="#0f766e"/>
+    </linearGradient>
+    <filter id="softShadow" x="-20%" y="-25%" width="140%" height="155%">
+      <feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#102033" flood-opacity="0.13"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="9" markerHeight="9" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#52616f"/>
+    </marker>
+    <style>
+      .page { fill: #f4f7fb; }
+      .headerTitle { font: 760 48px Arial, Helvetica, sans-serif; fill: #ffffff; }
+      .headerSub { font: 400 22px Arial, Helvetica, sans-serif; fill: #d5e1ea; }
+      .kicker { font: 700 14px Arial, Helvetica, sans-serif; fill: #14b8a6; letter-spacing: 2px; }
+      .panelTitle { font: 740 22px Arial, Helvetica, sans-serif; fill: #0f172a; }
+      .panelBody { font: 400 17px Arial, Helvetica, sans-serif; fill: #425466; }
+      .panelSmall { font: 400 14px Arial, Helvetica, sans-serif; fill: #687789; }
+      .num { font: 760 16px Arial, Helvetica, sans-serif; fill: #ffffff; }
+      .pillText { font: 700 13px Arial, Helvetica, sans-serif; fill: #0f172a; }
+      .sectionLabel { font: 760 15px Arial, Helvetica, sans-serif; fill: #667085; letter-spacing: 1.3px; }
+      .card { fill: #ffffff; stroke: #dbe4ee; stroke-width: 1.5; rx: 24; ry: 24; filter: url(#softShadow); }
+      .compact { fill: #ffffff; stroke: #dbe4ee; stroke-width: 1.4; rx: 20; ry: 20; }
+      .optional { fill: #fffdf5; stroke: #e6c45f; stroke-width: 1.8; stroke-dasharray: 8 7; rx: 20; ry: 20; }
+      .line { fill: none; stroke: #52616f; stroke-width: 3; marker-end: url(#arrow); }
+      .lineSoft { fill: none; stroke: #8aa0b5; stroke-width: 2.2; marker-end: url(#arrow); }
+      .lineDash { fill: none; stroke: #9aa8b5; stroke-width: 2.2; stroke-dasharray: 8 8; marker-end: url(#arrow); }
+      .mutedLine { stroke: #d6e0ea; stroke-width: 1.4; }
+      .chip { rx: 13; ry: 13; }
+      .dot { fill: #ffffff; stroke-width: 5; }
+    </style>
+  </defs>
+
+  <rect class="page" width="1920" height="1080"/>
+  <rect x="0" y="0" width="1920" height="230" fill="url(#headerGradient)"/>
+  <path d="M 0 230 C 260 188, 465 250, 710 216 C 970 180, 1160 210, 1378 238 C 1600 267, 1768 228, 1920 196 L 1920 0 L 0 0 Z" fill="#ffffff" opacity="0.055"/>
+
+  <text class="kicker" x="96" y="76">RNA-SEQ WORKFLOW</text>
+  <text class="headerTitle" x="96" y="135">Metodologia do pipeline</text>
+  <text class="headerSub" x="98" y="174">Do download dos FASTQs aos resultados integrados de expressao diferencial e relatorio de genes</text>
+
+  <g transform="translate(1456 60)">
+    <rect x="0" y="0" width="360" height="104" rx="26" fill="#ffffff" opacity="0.12"/>
+    <text x="28" y="39" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700" fill="#ffffff">Execucao flexivel</text>
+    <text x="28" y="69" font-family="Arial, Helvetica, sans-serif" font-size="16" fill="#d5e1ea">Slurm/HPC ou modo local</text>
+  </g>
+
+  <text class="sectionLabel" x="96" y="296">ENTRADAS</text>
+  <g transform="translate(96 322)">
+    <rect class="compact" x="0" y="0" width="520" height="124"/>
+    <circle cx="42" cy="42" r="18" fill="#0f766e"/>
+    <text class="num" x="31" y="48">A</text>
+    <text class="panelTitle" x="78" y="43">Configuracao do projeto</text>
+    <text class="panelBody" x="78" y="75">Projetos ENA/SRA, executor, caminhos, referencia</text>
+    <text class="panelSmall" x="78" y="101">config/user_settings.sh + config/pipeline_config.sh</text>
+  </g>
+
+  <g transform="translate(700 322)">
+    <rect class="compact" x="0" y="0" width="520" height="124"/>
+    <circle cx="42" cy="42" r="18" fill="#2563eb"/>
+    <text class="num" x="31" y="48">B</text>
+    <text class="panelTitle" x="78" y="43">Referencia e anotacao</text>
+    <text class="panelBody" x="78" y="75">Genoma, transcriptoma e GFF3/GTF</text>
+    <text class="panelSmall" x="78" y="101">indices Salmon ou STAR gerados no passo 010</text>
+  </g>
+
+  <g transform="translate(1304 322)">
+    <rect class="compact" x="0" y="0" width="520" height="124"/>
+    <circle cx="42" cy="42" r="18" fill="#7c3aed"/>
+    <text class="num" x="31" y="48">C</text>
+    <text class="panelTitle" x="78" y="43">Metadados experimentais</text>
+    <text class="panelBody" x="78" y="75">sample_id, run_accession, condicao e covariaveis</text>
+    <text class="panelSmall" x="78" y="101">YAMLs por projeto + tabela final combinada</text>
+  </g>
+
+  <path class="lineSoft" d="M 616 384 L 700 384"/>
+  <path class="lineSoft" d="M 1220 384 L 1304 384"/>
+
+  <text class="sectionLabel" x="96" y="522">PROCESSAMENTO</text>
+  <line class="mutedLine" x1="126" y1="652" x2="1770" y2="652"/>
+
+  <g transform="translate(96 560)">
+    <circle class="dot" cx="72" cy="92" r="25" stroke="#2563eb"/>
+    <rect class="card" x="0" y="0" width="292" height="184"/>
+    <circle cx="42" cy="42" r="18" fill="#2563eb"/>
+    <text class="num" x="31" y="48">010</text>
+    <text class="panelTitle" x="34" y="86">Referencia</text>
+    <text class="panelBody" x="34" y="118">Download/preparo dos arquivos</text>
+    <text class="panelBody" x="34" y="143">e construcao dos indices</text>
+    <rect class="chip" x="34" y="153" width="154" height="26" fill="#dbeafe"/>
+    <text class="pillText" x="48" y="171">Salmon / STAR</text>
+  </g>
+
+  <g transform="translate(446 560)">
+    <circle class="dot" cx="72" cy="92" r="25" stroke="#16a34a"/>
+    <rect class="card" x="0" y="0" width="292" height="184"/>
+    <circle cx="42" cy="42" r="18" fill="#16a34a"/>
+    <text class="num" x="31" y="48">020</text>
+    <text class="panelTitle" x="34" y="86">Download</text>
+    <text class="panelBody" x="34" y="118">FASTQs por projeto</text>
+    <text class="panelBody" x="34" y="143">a partir de links ENA/SRA</text>
+    <rect class="chip" x="34" y="153" width="112" height="26" fill="#dcfce7"/>
+    <text class="pillText" x="48" y="171">FASTQ.gz</text>
+  </g>
+
+  <g transform="translate(796 560)">
+    <circle class="dot" cx="72" cy="92" r="25" stroke="#7c3aed"/>
+    <rect class="card" x="0" y="0" width="292" height="184"/>
+    <circle cx="42" cy="42" r="18" fill="#7c3aed"/>
+    <text class="num" x="31" y="48">025</text>
+    <text class="panelTitle" x="34" y="86">Metadados</text>
+    <text class="panelBody" x="34" y="118">MetaQC, parse por projeto</text>
+    <text class="panelBody" x="34" y="143">e merge global</text>
+    <rect class="chip" x="34" y="153" width="142" height="26" fill="#ede9fe"/>
+    <text class="pillText" x="48" y="171">metadata.csv</text>
+  </g>
+
+  <g transform="translate(1146 560)">
+    <circle class="dot" cx="72" cy="92" r="25" stroke="#f59e0b"/>
+    <rect class="card" x="0" y="0" width="292" height="184"/>
+    <circle cx="42" cy="42" r="18" fill="#f59e0b"/>
+    <text class="num" x="31" y="48">030</text>
+    <text class="panelTitle" x="34" y="86">QC dos reads</text>
+    <text class="panelBody" x="34" y="118">FastQC, Trim Galore</text>
+    <text class="panelBody" x="34" y="143">merge por amostra e MultiQC</text>
+    <rect class="chip" x="34" y="153" width="138" height="26" fill="#fef3c7"/>
+    <text class="pillText" x="48" y="171">reads limpos</text>
+  </g>
+
+  <g transform="translate(1496 520)">
+    <rect class="card" x="0" y="0" width="328" height="264"/>
+    <circle cx="42" cy="42" r="18" fill="#e11d48"/>
+    <text class="num" x="31" y="48">040</text>
+    <text class="panelTitle" x="34" y="86">Quantificacao</text>
+    <text class="panelBody" x="34" y="119">Ramo definido por QUANT_METHOD:</text>
+    <rect x="34" y="144" width="260" height="42" rx="14" fill="#fff1f2" stroke="#fecdd3"/>
+    <text class="panelBody" x="52" y="171">Salmon -> quant.sf</text>
+    <rect x="34" y="198" width="260" height="42" rx="14" fill="#f8fafc" stroke="#cbd5e1"/>
+    <text class="panelBody" x="52" y="225">STAR -> BAM + GeneCounts</text>
+  </g>
+
+  <path class="line" d="M 388 652 L 446 652"/>
+  <path class="line" d="M 738 652 L 796 652"/>
+  <path class="line" d="M 1088 652 L 1146 652"/>
+  <path class="line" d="M 1438 652 L 1496 652"/>
+  <path class="lineDash" d="M 242 560 C 440 495, 1030 492, 1530 560"/>
+
+  <text class="sectionLabel" x="96" y="840">RESULTADOS</text>
+  <g transform="translate(96 866)">
+    <rect class="card" x="0" y="0" width="360" height="128"/>
+    <circle cx="42" cy="42" r="18" fill="#0891b2"/>
+    <text class="num" x="31" y="48">050</text>
+    <text class="panelTitle" x="78" y="43">Matrizes de expressao</text>
+    <text class="panelBody" x="78" y="75">counts + TPM ou CPM</text>
+    <text class="panelSmall" x="78" y="101">tximport para Salmon; importador STAR para GeneCounts</text>
+  </g>
+
+  <g transform="translate(530 866)">
+    <rect class="optional" x="0" y="0" width="330" height="128"/>
+    <circle cx="42" cy="42" r="18" fill="#ca8a04"/>
+    <text class="num" x="31" y="48">055</text>
+    <text class="panelTitle" x="78" y="43">Correcao de lote</text>
+    <text class="panelBody" x="78" y="75">avaliacao e matriz corrigida</text>
+    <text class="panelSmall" x="78" y="101">opcional; preserva covariaveis biologicas</text>
+  </g>
+
+  <g transform="translate(934 866)">
+    <rect class="card" x="0" y="0" width="330" height="128"/>
+    <circle cx="42" cy="42" r="18" fill="#0f766e"/>
+    <text class="num" x="31" y="48">060</text>
+    <text class="panelTitle" x="78" y="43">Expressao diferencial</text>
+    <text class="panelBody" x="78" y="75">DESeq2 por contrastes</text>
+    <text class="panelSmall" x="78" y="101">DEGs, PCA, MA, volcano e heatmaps</text>
+  </g>
+
+  <g transform="translate(1338 866)">
+    <rect class="optional" x="0" y="0" width="486" height="128"/>
+    <circle cx="42" cy="42" r="18" fill="#7c3aed"/>
+    <text class="num" x="31" y="48">090</text>
+    <text class="panelTitle" x="78" y="43">Relatorio de genes candidatos</text>
+    <text class="panelBody" x="78" y="75">integra expressao, anotacao, metadados e DEGs</text>
+    <text class="panelSmall" x="78" y="101">HTML interativo + tabelas + graficos por gene/grupo</text>
+  </g>
+
+  <path class="line" d="M 1660 784 C 1660 836, 278 820, 278 866"/>
+  <path class="lineDash" d="M 456 930 L 530 930"/>
+  <path class="line" d="M 860 930 L 934 930"/>
+  <path class="lineDash" d="M 1264 930 L 1338 930"/>
+
+  <g transform="translate(96 1022)">
+    <rect x="0" y="0" width="1728" height="34" rx="17" fill="#e8eef5"/>
+    <text x="24" y="23" font-family="Arial, Helvetica, sans-serif" font-size="14" fill="#52616f">Saidas principais: AllProjects_metadata_new.csv, MultiQC, quant.sf/ReadsPerGene.out.tab, counts_matrix, TPM/CPM, DEGs_all_results e gene_set_report.html</text>
+  </g>
+</svg>

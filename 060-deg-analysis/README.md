@@ -7,15 +7,17 @@ Generate a DEG analysis plan and submit DESeq2 jobs as a Slurm array.
 Confirm these exist:
 
 ```text
-050-quantification/counts_matrix.tsv
-050-quantification/quant_samples.tsv
+${QUANT_COUNTS_MATRIX_FILE}
+${QUANT_SAMPLES_FILE}
 ```
+
+Inputs may be plain TSV or gzip-compressed `.tsv.gz`.
 
 Optional corrected inputs from step 055:
 
 ```text
-055-batch-correction/all_projects/counts_batch_corrected.tsv
-055-batch-correction/all_projects/batch_correction_samples.tsv
+055-batch-correction/all_projects/counts_batch_corrected.tsv.gz
+055-batch-correction/all_projects/batch_correction_samples.tsv.gz
 ```
 
 Set defaults in `config/pipeline_config.sh`:
@@ -70,13 +72,17 @@ bash scripts/060-deg-analysis/run_deg_analysis_slurm.sh \
 - `060-deg-analysis/all_projects/raw/`
 - `060-deg-analysis/all_projects/batch_corrected/`
 
+Project-level analyses are kept under each project directory. The
+`all_projects` analysis is recalculated from the current combined matrix, not
+made by concatenating project DEGs.
+
 Main result files:
 
-- `deg_summary.tsv`
-- `DEGs_all_results.tsv`
-- `DEGs_significant.tsv`
-- `contrasts/DEG_<contrast>.tsv`
-- `normalized_counts_<variable>.tsv`
+- `deg_summary.tsv.gz`
+- `DEGs_all_results.tsv.gz`
+- `DEGs_significant.tsv.gz`
+- `contrasts/DEG_<contrast>.tsv.gz`
+- `normalized_counts_<variable>.tsv.gz`
 - `plots/`
 
 If a design is rank-deficient, the affected contrast is skipped and recorded in

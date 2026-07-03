@@ -53,5 +53,16 @@ bash scripts/030-qc-fastq/run_qc_project.sh PRJXXXX --local --dry-run
 - `${SCRATCH_ROOT}/<PROJECT>/fastqc_merged/`
 - `${SCRATCH_ROOT}/<PROJECT>/multiqc_030/`
 
+The biggest directories are usually `fastq_ftp/`, `trimmed_runs/`, and
+`trimmed_merged/`. To reduce disk usage after quantification succeeds, set
+`PIPELINE_STORAGE_MODE` in `config/user_settings.sh`:
+
+```bash
+export PIPELINE_STORAGE_MODE="balanced"  # removes individual FastQC dirs and trimmed_runs/
+export PIPELINE_STORAGE_MODE="minimal"   # also removes fastq_ftp/ and trimmed_merged/
+```
+
+`multiqc_030/` is kept in both cleanup modes.
+
 The old single-purpose scripts live under `030-qc-fastq/legacy/` and are
 ignored. Use `scripts/030-qc-fastq/run_qc_project.sh` for new manual runs.

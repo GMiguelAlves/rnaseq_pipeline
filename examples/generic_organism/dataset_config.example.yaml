@@ -1,0 +1,27 @@
+project:
+  id: PRJNA000000
+  organism: configured_in_config_user_settings
+  source: ENA
+  accession: PRJNA000000
+
+download:
+  link_file: ena-file-download-read_run-PRJNA000000-fastq_ftp.sh
+  protocol: ftp
+  threads: 8
+  retry: true
+  continue_download: true
+
+library:
+  layout: paired
+  compression: gz
+  read_suffix:
+    r1: "_1.fastq.gz"
+    r2: "_2.fastq.gz"
+
+validation:
+  check_md5: false
+  expected_files: auto
+
+metadata:
+  metadata_file:
+  parser:

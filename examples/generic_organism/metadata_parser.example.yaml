@@ -1,0 +1,75 @@
+dataset: PRJNA000000
+
+defaults:
+  dataset: PRJNA000000
+  condition: unknown
+  stage: unknown
+  tissue: unknown
+  sex: unknown
+  batch: B0
+  replicate:
+  lane:
+
+columns:
+  sample_field: sample_id
+  run_field: run_accession
+
+preserve_columns:
+  sample_id: raw_sample_id
+  study_accession: study_accession
+  scientific_name: scientific_name
+  library_name: library_name
+
+parsing:
+  condition:
+    source: sample_id
+    regex_map:
+      "control|ctrl|mock": control
+      "treated|treatment|case": treated
+
+  stage:
+    source: sample_id
+    regex_map:
+      "time1|t1": time1
+      "time2|t2": time2
+
+  tissue:
+    source: sample_id
+    regex_map:
+      "root": root
+      "leaf": leaf
+      "whole": whole_body
+
+  replicate:
+    source: sample_id
+    regex_extract: "(?:rep|replicate|R)[_-]?(\\d+)"
+
+sample_id_components:
+  - field: dataset
+    width: 10
+  - field: condition
+    width: 8
+  - field: stage
+    width: 8
+  - field: tissue
+    width: 8
+  - field: replicate
+    replicate: true
+  - field: batch
+
+final_columns:
+  - sample_id
+  - file_prefix
+  - raw_sample_id
+  - condition
+  - stage
+  - tissue
+  - sex
+  - batch
+  - replicate
+  - dataset
+  - lane
+  - run_accession
+  - study_accession
+  - scientific_name
+  - library_name

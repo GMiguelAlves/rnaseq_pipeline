@@ -1,0 +1,73 @@
+dataset: PRJXXXX
+
+defaults:
+  dataset: PRJXXXX
+  condition: unknown
+  batch: B0
+  lane:
+
+columns:
+  sample_field: sample_id
+  run_field: run_accession
+
+preserve_columns:
+  sample_id: raw_sample_id
+  study_accession: study_accession
+
+parsing:
+  condition:
+    source: sample_id
+    regex_map:
+      "control|ctrl|mock": control
+      "treated|treatment|case": treated
+
+  stage:
+    source: sample_id
+    regex_map:
+      "stage1|time1|t1": stage1
+      "stage2|time2|t2": stage2
+
+  tissue:
+    source: sample_id
+    regex_map:
+      "whole": whole_body
+
+  sex:
+    source: sample_id
+    regex_map:
+      "female|^F_": female
+      "male|^M_": male
+      "mixed|^X_": mixed
+
+  replicate:
+    source: sample_id
+    regex_extract: "(?:rep|replicate|R)[_-]?(\\d+)"
+
+sample_id_components:
+  - SAMPLE
+  - field: condition
+    width: 8
+  - field: stage
+    width: 8
+  - field: tissue
+    width: 8
+  - field: sex
+    width: 3
+  - field: replicate
+    replicate: true
+  - field: batch
+
+final_columns:
+  - sample_id
+  - file_prefix
+  - raw_sample_id
+  - stage
+  - tissue
+  - sex
+  - condition
+  - replicate
+  - batch
+  - dataset
+  - lane
+  - run_accession
+  - study_accession

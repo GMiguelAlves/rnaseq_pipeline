@@ -3,6 +3,7 @@
 import argparse
 import importlib.metadata
 import json
+import os
 from pathlib import Path
 
 import numpy as np
@@ -10,6 +11,7 @@ import pandas as pd
 
 
 def parse_args():
+    table_suffix = os.environ.get("PIPELINE_TABLE_SUFFIX", "")
     parser = argparse.ArgumentParser(
         description="Apply pyComBat/ComBat-Seq batch correction to gene-level RNA-seq counts."
     )
@@ -22,7 +24,8 @@ def parse_args():
         default="",
         help="Comma-separated categorical covariates to preserve, e.g. life_stage,tissue,sex.",
     )
-    parser.add_argument("--output-name", default="counts_batch_corrected.tsv")
+    parser.add_argument("--output-name", default=f"counts_batch_corrected.tsv{table_suffix}")
+    parser.add_argument("--sample-table-name", default=f"batch_correction_samples.tsv{table_suffix}")
     parser.add_argument("--report-name", default="batch_correction_report.json")
     parser.add_argument("--pca-name", default="batch_pca_before_after.png")
     parser.add_argument("--ref-batch", default=None, help="Optional reference batch for pycombat_seq.")
@@ -236,12 +239,13 @@ def main():
 
     write_counts(corrected, corrected_path)
     pca_written = plot_pca(counts, corrected, samples, args.batch_column, pca_path)
-    samples.to_csv(output_dir / "batch_correction_samples.tsv", sep="\t", index=False)
+    sample_table_path = output_dir / args.sample_table_name
+    samples.to_csv(sample_table_path, sep="\t", index=False)
 
     report["outputs"] = {
         "corrected_counts": str(corrected_path),
         "pca": str(pca_path) if pca_written else None,
-        "sample_table": str(output_dir / "batch_correction_samples.tsv"),
+        "sample_table": str(sample_table_path),
     }
     if not pca_written:
         report["pca_warning"] = "matplotlib unavailable; PCA plot was not generated."

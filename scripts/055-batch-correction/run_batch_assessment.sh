@@ -29,6 +29,27 @@ N_PCS=10
 PERMUTATIONS=199
 DRY_RUN=0
 
+resolve_table_file() {
+    local path="$1"
+    if [ -f "$path" ]; then
+        echo "$path"
+        return 0
+    fi
+    if [[ "$path" == *.gz ]]; then
+        local plain="${path%.gz}"
+        if [ -f "$plain" ]; then
+            echo "$plain"
+            return 0
+        fi
+    else
+        if [ -f "${path}.gz" ]; then
+            echo "${path}.gz"
+            return 0
+        fi
+    fi
+    echo "$path"
+}
+
 usage() {
     echo "Uso: $0 [PROJECT|--all] [opcoes]"
     echo ""
@@ -121,27 +142,35 @@ done
 
 if [ -z "$COUNTS" ]; then
     if [ -n "$PROJECT" ]; then
-        COUNTS="${QUANTIFICATION_DIR}/${PROJECT}_counts_matrix.tsv"
+        COUNTS="${QUANTIFICATION_DIR}/${PROJECT}_counts_matrix.tsv${PIPELINE_TABLE_SUFFIX}"
     else
-        COUNTS="${QUANTIFICATION_DIR}/counts_matrix.tsv"
+        COUNTS="${QUANT_COUNTS_MATRIX_FILE}"
     fi
 fi
+COUNTS="$(resolve_table_file "$COUNTS")"
 
 if [ -z "$SAMPLES" ]; then
     if [ -n "$PROJECT" ]; then
-        SAMPLES="${QUANTIFICATION_DIR}/${PROJECT}_quant_samples.tsv"
+        SAMPLES="${QUANTIFICATION_DIR}/${PROJECT}_quant_samples.tsv${PIPELINE_TABLE_SUFFIX}"
     else
-        SAMPLES="${QUANTIFICATION_DIR}/quant_samples.tsv"
+        SAMPLES="${QUANT_SAMPLES_FILE}"
     fi
 fi
+SAMPLES="$(resolve_table_file "$SAMPLES")"
 
 DEFAULT_RUN_DIR="${BATCH_DIR}/all_projects"
 if [ -n "$PROJECT" ]; then
     DEFAULT_RUN_DIR="${BATCH_DIR}/${PROJECT}"
 fi
 
-if [ -z "$CORRECTED_COUNTS" ] && [ -f "${DEFAULT_RUN_DIR}/counts_batch_corrected.tsv" ]; then
-    CORRECTED_COUNTS="${DEFAULT_RUN_DIR}/counts_batch_corrected.tsv"
+if [ -z "$CORRECTED_COUNTS" ]; then
+    candidate="$(resolve_table_file "${DEFAULT_RUN_DIR}/counts_batch_corrected.tsv${PIPELINE_TABLE_SUFFIX}")"
+    if [ -f "$candidate" ]; then
+        CORRECTED_COUNTS="$candidate"
+    fi
+fi
+if [ -n "$CORRECTED_COUNTS" ]; then
+    CORRECTED_COUNTS="$(resolve_table_file "$CORRECTED_COUNTS")"
 fi
 
 if [ -z "$OUTPUT_DIR" ]; then
